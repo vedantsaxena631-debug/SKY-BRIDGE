@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Eye, EyeOff, Loader2, AlertCircle, RefreshCw, Radio, Terminal } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
-const STATUS_URL = '/api/v1/status';
+const RAW_API_URL = (import.meta as any).env?.VITE_API_URL || '/api/v1';
+const STATUS_URL = `${RAW_API_URL.replace(/\/+$/, '')}/status`;
 const POLL_MS = 8000;
 
 const ROLES = [
@@ -165,23 +166,42 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onOpenLanding }) => {
               <Radio className="w-4 h-4 text-emerald-400" />
               <h2 className="text-sm font-semibold tracking-wide uppercase text-slate-200">Hardware Network Status</h2>
             </div>
-            <span className="text-[11px] text-emerald-400/90 font-mono bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
-              LIVE SYSTEM
+            <span
+              className={`text-[11px] font-mono px-2 py-0.5 rounded border ${
+                statusError
+                  ? 'text-cyan-400/90 bg-cyan-950/60 border-cyan-500/30'
+                  : 'text-emerald-400/90 bg-emerald-950/60 border-emerald-500/30'
+              }`}
+            >
+              {statusError ? 'STANDALONE MODE' : 'LIVE SYSTEM'}
             </span>
           </header>
 
           {statusError ? (
-            <div className="flex items-start gap-3 text-sm text-slate-300">
-              <RefreshCw size={16} className="mt-0.5 shrink-0 text-amber-400 animate-spin" aria-hidden />
-              <p>
-                Status unavailable. Retrying every {POLL_MS / 1000} seconds.
-                {status && (
-                  <>
-                    <br />
-                    <span className="text-slate-400 text-xs">Last contact {relativeTime(status.updatedAt)}.</span>
-                  </>
-                )}
-              </p>
+            <div className="space-y-4">
+              <div className="p-3 rounded-lg bg-cyan-950/30 border border-cyan-800/40 text-xs text-slate-300 space-y-1">
+                <p className="font-semibold text-cyan-300 flex items-center gap-1.5">
+                  <span>Standalone Console Ready</span>
+                </p>
+                <p className="text-slate-400 leading-relaxed">
+                  Remote server not detected on this host. Use credentials below or click any Quick Fill profile to enter the mission console in simulated telemetry mode.
+                </p>
+              </div>
+
+              <ul className="space-y-3">
+                {['A', 'DRONE', 'B'].map((id) => (
+                  <li
+                    key={id}
+                    className="flex items-center justify-between gap-4 text-sm bg-slate-900/60 px-3 py-2 rounded-lg border border-slate-800/60"
+                  >
+                    <span className="flex items-center gap-2.5 font-medium text-slate-200">
+                      <StatusDot status="online" />
+                      {NODE_LABELS[id]}
+                    </span>
+                    <span className="font-mono text-xs text-cyan-400">simulated</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           ) : !status ? (
             <div className="space-y-3" aria-hidden>

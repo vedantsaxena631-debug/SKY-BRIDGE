@@ -37,6 +37,16 @@ export interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 const STORAGE_KEY = 'skybridge.session';
 
+const PRESET_ACCOUNTS: Record<
+  string,
+  { role: 'admin' | 'operator' | 'viewer'; team: 'A' | 'B' | null; pass: string; name: string; callsign: string }
+> = {
+  admin: { role: 'admin', team: null, pass: 'admin123', name: 'Mission Director', callsign: 'SKY-COMMAND' },
+  'team-a': { role: 'operator', team: 'A', pass: 'teama123', name: 'Alpha Field Unit', callsign: 'ALPHA-1' },
+  'team-b': { role: 'operator', team: 'B', pass: 'teamb123', name: 'Bravo Base Station', callsign: 'BRAVO-BASE' },
+  observer: { role: 'viewer', team: null, pass: 'viewer123', name: 'Flight Observer', callsign: 'OBSERVER-1' },
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [session, setSession] = useState<SessionData | null>(null);
   const [restoring, setRestoring] = useState(true);
@@ -64,29 +74,128 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .then((data: any) => {
         setSession({ ...parsed, user: data.user, mode: data.mode });
       })
-      .catch(() => {
-        localStorage.removeItem(STORAGE_KEY);
-        api.setToken(null);
+      .catch((err: any) => {
+        const isOfflineOrUnavailable =
+          err?.code === 'NETWORK' ||
+          err?.code === 'SERVER_UNAVAILABLE' ||
+          err?.status === 404 ||
+          err?.isServerUnavailable ||
+          parsed.token?.startsWith('offline_') ||
+          parsed.token?.startsWith('guest_') ||
+          parsed.guest;
+
+        if (isOfflineOrUnavailable) {
+          setSession(parsed);
+        } else {
+          localStorage.removeItem(STORAGE_KEY);
+          api.setToken(null);
+        }
       })
       .finally(() => setRestoring(false));
   }, []);
 
-  const login = useCallback(async ({ username, password, claimedRole, mode }: { username: string; password: string; claimedRole: string; mode: string }) => {
-    const data = await api.post('/auth/login', { username, password, claimedRole, mode });
-    const next: SessionData = { token: data.token, user: data.user, mode: data.mode };
-    api.setToken(data.token);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    setSession(next);
-    return next;
-  }, []);
+  const login = useCallback(
+    async ({
+      username,
+      password,
+      claimedRole,
+      mode,
+    }: {
+      username: string;
+      password: string;
+      claimedRole: string;
+      mode: string;
+    }) => {
+      const cleanUsername = username.trim().toLowerCase();
+      try {
+        const data = await api.post('/auth/login', { username: cleanUsername, password, claimedRole, mode });
+        const next: SessionData = { token: data.token, user: data.user, mode: data.mode };
+        api.setToken(data.token);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        setSession(next);
+        return next;
+      } catch (err: any) {
+        const isServerUnavailable =
+          err.code === 'NETWORK' ||
+          err.code === 'SERVER_UNAVAILABLE' ||
+          err.status === 404 ||
+          err.isServerUnavailable;
+
+        // If the server answered with an authentic auth error and is NOT unavailable, throw it
+        if (!isServerUnavailable && (err.status === 401 || err.status === 403 || err.status === 429 || err.status === 400)) {
+          throw err;
+        }
+
+        // Server is unreachable (e.g. Vercel static deployment or backend starting up):
+        // Fall back to client-side credential verification
+        const preset = PRESET_ACCOUNTS[cleanUsername];
+        if (preset) {
+          if (preset.role !== claimedRole) {
+            const roleErr: any = new Error(
+              `Role mismatch: '${cleanUsername}' belongs to the '${preset.role.toUpperCase()}' role. Please select the '${preset.role}' tab.`
+            );
+            roleErr.status = 401;
+            throw roleErr;
+          }
+          if (preset.pass !== password) {
+            const passErr: any = new Error('Invalid username or password.');
+            passErr.status = 401;
+            throw passErr;
+          }
+
+          const offlineSession: SessionData = {
+            token: `offline_token_${Date.now()}_${cleanUsername}`,
+            user: {
+              id: `usr_${cleanUsername}`,
+              username: cleanUsername,
+              role: preset.role,
+              team: preset.team,
+              name: preset.name,
+              callsign: preset.callsign,
+            },
+            mode: (mode as any) || 'demo',
+            guest: false,
+          };
+          api.setToken(offlineSession.token);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(offlineSession));
+          setSession(offlineSession);
+          return offlineSession;
+        }
+
+        throw err;
+      }
+    },
+    []
+  );
 
   const startGuestDemo = useCallback(async () => {
-    const data = await api.post('/auth/guest-demo', {});
-    const next: SessionData = { token: data.token, user: data.user, mode: 'demo', guest: true };
-    api.setToken(data.token);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    setSession(next);
-    return next;
+    try {
+      const data = await api.post('/auth/guest-demo', {});
+      const next: SessionData = { token: data.token, user: data.user, mode: 'demo', guest: true };
+      api.setToken(data.token);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      setSession(next);
+      return next;
+    } catch {
+      // Fallback for Vercel static deployment or unreachable backend
+      const guestSession: SessionData = {
+        token: `guest_token_${Date.now()}`,
+        user: {
+          id: 'usr_guest',
+          username: 'observer',
+          role: 'viewer',
+          team: null,
+          name: 'Guest Observer',
+          callsign: 'OBSERVER-GUEST',
+        },
+        mode: 'demo',
+        guest: true,
+      };
+      api.setToken(guestSession.token);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(guestSession));
+      setSession(guestSession);
+      return guestSession;
+    }
   }, []);
 
   const logout = useCallback(async () => {

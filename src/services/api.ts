@@ -32,16 +32,34 @@ async function request(path: string, { method = 'GET', body, signal }: RequestOp
   }
 
   let data: any = null;
-  try {
-    data = await response.json();
-  } catch {
-    data = null;
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
+    }
+  } else {
+    // If a static host like Vercel returns index.html for missing /api endpoints
+    const text = await response.text().catch(() => '');
+    if (text.trim().startsWith('<') || response.status === 404) {
+      const err: any = new Error(
+        response.status === 404
+          ? 'SkyBridge backend route not found (404).'
+          : 'SkyBridge backend unavailable (received HTML from static host).'
+      );
+      err.status = response.status;
+      err.code = 'SERVER_UNAVAILABLE';
+      err.isServerUnavailable = true;
+      throw err;
+    }
   }
 
   if (!response.ok) {
     const err: any = new Error(data?.error || `Request failed (${response.status})`);
     err.status = response.status;
-    err.code = data?.code;
+    err.code = data?.code || (response.status >= 500 ? 'SERVER_ERROR' : 'REQUEST_FAILED');
+    err.isServerUnavailable = response.status >= 502;
     throw err;
   }
   return data;
