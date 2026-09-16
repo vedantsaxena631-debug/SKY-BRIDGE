@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import {
   Radio,
   Bell,
@@ -17,6 +18,8 @@ import {
   Minimize2,
   AlertTriangle,
   HelpCircle,
+  LogOut,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { UserRole } from '../../types';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -32,9 +35,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   onToggleMobileSidebar,
   mobileSidebarOpen,
 }) => {
+  const auth = useAuth();
   const {
     currentUser,
-    switchUserRole,
     theme,
     setTheme,
     notifications,
@@ -382,7 +385,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             )}
           </div>
 
-          {/* User Context & Role Switcher (RBAC) */}
+          {/* User Context & Server-Enforced Identity */}
           <div className="relative">
             <button
               onClick={() => setShowUserDropdown(!showUserDropdown)}
@@ -390,68 +393,101 @@ export const TopBar: React.FC<TopBarProps> = ({
                 isLight ? 'bg-white border-[#DDE3EA] hover:bg-slate-50' : 'bg-slate-900 border-slate-800 hover:border-slate-700'
               }`}
             >
-              <div className="w-6 h-6 rounded-full bg-cyan-500/10 border border-cyan-500 flex items-center justify-center text-cyan-600 dark:text-cyan-300 text-xs font-bold">
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                currentUser.role === 'admin'
+                  ? 'bg-amber-500/10 border border-amber-500 text-amber-500'
+                  : currentUser.role === 'operator'
+                  ? 'bg-cyan-500/10 border border-cyan-500 text-cyan-400'
+                  : 'bg-slate-500/10 border border-slate-500 text-slate-400'
+              }`}>
                 {currentUser.role[0].toUpperCase()}
               </div>
               <div className="hidden sm:block text-left text-xs leading-tight">
-                <div className={`font-medium ${isLight ? 'text-[#0B1220]' : 'text-slate-200'}`}>
-                  {currentUser.name.split(' ')[0]}
+                <div className={`font-medium flex items-center gap-1.5 ${isLight ? 'text-[#0B1220]' : 'text-slate-200'}`}>
+                  <span>{currentUser.name.split(' ')[0]}</span>
+                  {currentUser.team && (
+                    <span className="text-[10px] px-1 py-0.2 rounded bg-cyan-500/15 text-cyan-400 font-mono font-bold">
+                      TEAM {currentUser.team}
+                    </span>
+                  )}
                 </div>
-                <div className="text-[10px] font-mono text-cyan-500 uppercase">{currentUser.role}</div>
+                <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                  <span className="text-slate-400 uppercase">{currentUser.role}</span>
+                  <span className="text-slate-600">·</span>
+                  <span className={mode === 'LIVE' ? 'text-emerald-400 font-bold' : 'text-[#A78BFA] font-bold'}>
+                    {mode}
+                  </span>
+                </div>
               </div>
             </button>
 
-            {/* User Role Switcher Dropdown */}
+            {/* Authenticated User Session Dropdown */}
             {showUserDropdown && (
               <div
-                className={`absolute right-0 mt-2 w-56 rounded-xl shadow-2xl p-2 z-50 border ${
+                className={`absolute right-0 mt-2 w-64 rounded-xl shadow-2xl p-3 z-50 border ${
                   isLight ? 'bg-white border-[#DDE3EA] text-[#0B1220]' : 'bg-slate-900 border-slate-800 text-slate-100'
                 }`}
               >
-                <div className={`px-3 py-2 border-b ${isLight ? 'border-[#EDEFF2]' : 'border-slate-800'}`}>
-                  <div className="text-xs font-semibold">{currentUser.name}</div>
-                  <div className="text-[11px] font-mono text-slate-400">{currentUser.callsign}</div>
-                  <div className="text-[10px] text-cyan-500 uppercase font-mono mt-0.5">
+                <div className={`pb-2.5 border-b ${isLight ? 'border-[#EDEFF2]' : 'border-slate-800'}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold">{currentUser.name}</span>
+                    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold uppercase ${
+                      mode === 'LIVE'
+                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                        : 'bg-[#8B5CF6]/15 text-[#A78BFA] border border-[#8B5CF6]/30'
+                    }`}>
+                      {mode} SESSION
+                    </span>
+                  </div>
+                  <div className="text-[11px] font-mono text-slate-400 mt-0.5">
+                    Callsign: {currentUser.callsign} {currentUser.team ? `(Team ${currentUser.team})` : ''}
+                  </div>
+                  <div className="text-[10px] font-mono text-cyan-500 uppercase mt-1">
                     Role: {currentUser.role}
                   </div>
                 </div>
 
-                <div className="py-2 text-xs">
-                  <div className="px-3 py-1 text-[10px] font-mono uppercase text-slate-400">
-                    Switch Active Role (RBAC Demo):
+                <div className="py-2.5 text-xs space-y-1">
+                  <div className="text-[10px] font-mono uppercase text-slate-400">
+                    Enforcement Status
                   </div>
-                  {(['admin', 'operator', 'viewer'] as UserRole[]).map((r) => (
-                    <button
-                      key={r}
-                      onClick={() => {
-                        switchUserRole(r);
-                        setShowUserDropdown(false);
-                      }}
-                      className={`w-full text-left px-3 py-1.5 rounded-lg flex items-center justify-between capitalize transition-colors ${
-                        currentUser.role === r
-                          ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 font-semibold'
-                          : isLight
-                          ? 'text-slate-700 hover:bg-slate-100'
-                          : 'text-slate-300 hover:bg-slate-800'
-                      }`}
-                    >
-                      <span>{r}</span>
-                      {currentUser.role === r && <span className="w-1.5 h-1.5 rounded-full bg-cyan-500" />}
-                    </button>
-                  ))}
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    {currentUser.role === 'operator'
+                      ? `Locked to Team ${currentUser.team}. Messages are signed and verified server-side.`
+                      : currentUser.role === 'admin'
+                      ? 'Administrative oversight. Can dispatch diagnostic PINGs.'
+                      : 'Viewer account. Read-only telemetry access.'}
+                  </p>
                 </div>
 
-                <div className={`border-t pt-1 ${isLight ? 'border-[#EDEFF2]' : 'border-slate-800'}`}>
+                <div className={`border-t pt-2 space-y-1 ${isLight ? 'border-[#EDEFF2]' : 'border-slate-800'}`}>
                   <button
                     onClick={() => {
-                      setActiveTab('settings');
                       setShowUserDropdown(false);
+                      auth.switchModeViaLogout(auth.isDemo ? 'live' : 'demo');
                     }}
-                    className={`w-full text-left px-3 py-1.5 text-xs rounded-lg ${
-                      isLight ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-300 hover:bg-slate-800'
+                    className={`w-full text-left px-3 py-2 text-xs rounded-lg flex items-center justify-between transition-colors ${
+                      isLight
+                        ? 'bg-slate-100 hover:bg-slate-200 text-slate-800'
+                        : 'bg-slate-800/80 hover:bg-slate-800 text-slate-200'
                     }`}
                   >
-                    Account Settings
+                    <span className="flex items-center gap-1.5 font-mono text-[11px]">
+                      <ArrowLeftRight size={13} className="text-cyan-400" />
+                      Switch to {mode === 'DEMO' ? 'Live' : 'Demo'} Mode
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">Sign out</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setShowUserDropdown(false);
+                      auth.logout();
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs rounded-lg flex items-center gap-1.5 text-rose-400 hover:bg-rose-500/10 transition-colors font-mono text-[11px]"
+                  >
+                    <LogOut size={13} />
+                    <span>Sign Out</span>
                   </button>
                 </div>
               </div>

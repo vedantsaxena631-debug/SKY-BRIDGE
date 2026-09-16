@@ -1,5 +1,7 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
+import { ScrollCinematic } from '../landing/ScrollCinematic';
 import {
   Radio,
   ArrowRight,
@@ -16,13 +18,28 @@ import {
   Clock,
   ChevronRight,
   Lock,
+  LogIn,
 } from 'lucide-react';
 
 export const LandingView: React.FC = () => {
-  const { setActiveTab, toggleDemoMode, mode } = useApp();
+  const { setActiveTab } = useApp();
+  const { isAuthenticated, startGuestDemo } = useAuth();
 
-  const handleLaunchDemo = () => {
-    setActiveTab('overview');
+  const handleLaunchConsole = async () => {
+    if (!isAuthenticated) {
+      try {
+        await startGuestDemo();
+        setActiveTab('overview');
+      } catch {
+        setActiveTab('login');
+      }
+    } else {
+      setActiveTab('overview');
+    }
+  };
+
+  const handleOpenLogin = () => {
+    setActiveTab('login');
   };
 
   return (
@@ -44,131 +61,40 @@ export const LandingView: React.FC = () => {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setActiveTab('docs')}
-            className="text-xs text-slate-400 hover:text-slate-200 hidden sm:block transition-colors"
+            className="text-xs text-slate-400 hover:text-slate-200 hidden sm:block transition-colors cursor-pointer"
           >
             Architecture Docs
           </button>
           <button
             onClick={() => setActiveTab('status')}
-            className="text-xs text-slate-400 hover:text-slate-200 hidden sm:block transition-colors"
+            className="text-xs text-slate-400 hover:text-slate-200 hidden sm:block transition-colors cursor-pointer"
           >
             System Status
           </button>
+          {!isAuthenticated && (
+            <button
+              onClick={handleOpenLogin}
+              className="text-xs text-cyan-400 hover:text-cyan-300 px-3 py-1.5 rounded-lg border border-cyan-800/60 bg-cyan-950/40 transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Sign In</span>
+            </button>
+          )}
           <button
-            onClick={handleLaunchDemo}
-            className="px-3.5 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-xs transition-all shadow-[0_0_15px_rgba(6,182,212,0.25)] flex items-center gap-1.5"
+            onClick={handleLaunchConsole}
+            className="px-3.5 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-xs transition-all shadow-[0_0_15px_rgba(6,182,212,0.25)] flex items-center gap-1.5 cursor-pointer"
           >
-            <span>Launch Console</span>
+            <span>{isAuthenticated ? 'Return to Console' : 'Launch Demo Console'}</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
       </nav>
 
-      {/* 1. Hero Section */}
-      <header className="relative pt-16 pb-20 px-6 border-b border-slate-800/80 overflow-hidden">
-        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-          <div className="lg:col-span-7 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/60 border border-cyan-500/30 text-cyan-300 text-xs font-mono">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-              <span>Drone-Relay Emergency Communication Network</span>
-            </div>
+      {/* 1. Scroll-Cinematic Pinned Hero Sequence */}
+      <ScrollCinematic />
 
-            <h1 className="text-3xl sm:text-5xl font-bold tracking-tight text-slate-100 leading-tight">
-              Communication shouldn't stop when infrastructure does.
-            </h1>
-
-            <p className="text-base text-slate-400 max-w-xl leading-relaxed">
-              SkyBridge deploys a drone-mounted ESP32 and SX1278 LoRa payload to bridge isolated search-and-rescue teams over difficult topography — operating entirely independently of cellular, satellite, and Wi-Fi networks.
-            </p>
-
-            <div className="flex flex-wrap items-center gap-3 pt-2">
-              <button
-                id="hero-explore-platform-btn"
-                onClick={handleLaunchDemo}
-                className="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-sm transition-all shadow-[0_0_20px_rgba(6,182,212,0.3)] flex items-center gap-2"
-              >
-                <span>Explore Operations Console</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setActiveTab('docs')}
-                className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 font-medium text-sm transition-colors"
-              >
-                View Architecture Specification
-              </button>
-            </div>
-
-            <div className="flex items-center gap-4 text-xs font-mono text-slate-400 pt-2">
-              <span className="flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                Zero Cellular Dependency
-              </span>
-              <span className="flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                433 MHz SX1278 LoRa
-              </span>
-              <span className="flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                Store-and-Forward Logic
-              </span>
-            </div>
-          </div>
-
-          {/* Hero Visual: Subtle LoRa Relay Diagram with Loop Animation */}
-          <div className="lg:col-span-5">
-            <div className="bg-slate-900/90 rounded-2xl border border-slate-800 p-6 shadow-2xl relative">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-6">
-                <span className="text-xs font-mono text-cyan-400 font-semibold uppercase">
-                  Physical Link Simulation
-                </span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800">
-                  DEMO HARNESS
-                </span>
-              </div>
-
-              {/* Topology Animation Diagram */}
-              <div className="relative py-8 flex flex-col items-center gap-8">
-                {/* Aerial Drone Node */}
-                <div className="p-4 rounded-xl bg-slate-950 border-2 border-cyan-500/60 text-center w-48 shadow-[0_0_25px_rgba(6,182,212,0.15)] relative">
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-2 py-0.2 bg-cyan-500 text-slate-950 text-[9px] font-mono font-bold rounded">
-                    AIRBORNE RELAY
-                  </div>
-                  <Plane className="w-6 h-6 text-cyan-400 mx-auto mb-1" />
-                  <div className="text-xs font-bold text-slate-200">DRONE PAYLOAD</div>
-                  <div className="text-[10px] font-mono text-slate-400">ESP32 + SX1278 (433MHz)</div>
-                </div>
-
-                {/* Ground Nodes */}
-                <div className="w-full flex items-center justify-between gap-4">
-                  <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 text-center flex-1">
-                    <Radio className="w-5 h-5 text-emerald-400 mx-auto mb-1" />
-                    <div className="text-xs font-bold text-slate-200">TEAM A</div>
-                    <div className="text-[10px] font-mono text-slate-400">Ground Base</div>
-                  </div>
-
-                  <div className="flex flex-col items-center">
-                    <span className="text-[10px] font-mono text-cyan-400 animate-pulse">
-                      LoRa RF 433MHz
-                    </span>
-                    <span className="text-[10px] text-slate-400">Store & Forward</span>
-                  </div>
-
-                  <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 text-center flex-1">
-                    <Radio className="w-5 h-5 text-emerald-400 mx-auto mb-1" />
-                    <div className="text-xs font-bold text-slate-200">TEAM B</div>
-                    <div className="text-[10px] font-mono text-slate-400">Search Team</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4 p-3 bg-slate-950/80 rounded-lg border border-slate-800/80 text-[11px] font-mono text-slate-400 flex items-center justify-between">
-                <span>Packet De-duplication:</span>
-                <span className="text-emerald-400 font-semibold">Unique msgID Check</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
+      {/* Anchor for keyboard skip link */}
+      <div id="landing-content-start" className="scroll-mt-16" />
 
       {/* 2. The Problem Statement */}
       <section className="py-16 px-6 border-b border-slate-800/60 max-w-5xl mx-auto">
@@ -348,10 +274,10 @@ export const LandingView: React.FC = () => {
           </p>
           <div className="flex items-center justify-center gap-3 pt-2">
             <button
-              onClick={handleLaunchDemo}
-              className="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)] flex items-center gap-2"
+              onClick={handleLaunchConsole}
+              className="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)] flex items-center gap-2 cursor-pointer"
             >
-              <span>Launch Operations Console</span>
+              <span>{isAuthenticated ? 'Return to Console' : 'Launch Demo Console'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
             <button

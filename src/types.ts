@@ -6,7 +6,8 @@ export type MessageStatus =
   | 'RELAYED'
   | 'DELIVERED'
   | 'ACKNOWLEDGED'
-  | 'FAILED_NO_ACK';
+  | 'FAILED_NO_ACK'
+  | 'FAILED';
 
 export type MessagePriority = 'ROUTINE' | 'URGENT' | 'CRITICAL';
 
@@ -18,6 +19,8 @@ export interface User {
   role: UserRole;
   name: string;
   callsign: string;
+  team?: 'A' | 'B' | null;
+  avatar?: string;
 }
 
 export interface Message {

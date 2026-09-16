@@ -59,6 +59,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
     { id: 'drone', label: 'Drone Relay', icon: Plane },
     { id: 'stats', label: 'System Statistics', icon: BarChart3 },
     { id: 'hardware', label: 'Hardware Specs', icon: Cpu },
+    { id: 'landing', label: 'Mission Narrative', icon: Globe },
     { id: 'notifications', label: 'Notifications', icon: Bell, count: unreadCount || undefined },
     { id: 'status', label: 'Public Status', icon: Activity },
     { id: 'audit-log', label: 'Audit Log', icon: ShieldAlert, adminOnly: true },

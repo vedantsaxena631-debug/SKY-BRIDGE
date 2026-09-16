@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { PREDEFINED_MESSAGES } from '../../data/initialData';
 import { MessagePriority, NodeId } from '../../types';
 import {
@@ -12,19 +13,36 @@ import {
   ArrowRight,
   Shield,
   Layers,
+  Lock,
+  Info,
 } from 'lucide-react';
 
 const MAX_PAYLOAD_BYTES = 220; // Physical LoRa SX1278 buffer limit
 
 export const SendMessageView: React.FC = () => {
+  const auth = useAuth();
   const { sendMessage, sendTestPing, currentUser, mode, activeTransmission } = useApp();
 
-  const [from, setFrom] = useState<NodeId>('TEAM_A');
-  const [to, setTo] = useState<NodeId>('TEAM_B');
+  const operatorTeam = auth.user?.team || currentUser.team || 'A';
+  const defaultFrom: NodeId = operatorTeam === 'B' ? 'TEAM_B' : 'TEAM_A';
+  const defaultTo: NodeId = operatorTeam === 'B' ? 'TEAM_A' : 'TEAM_B';
+
+  const [from, setFrom] = useState<NodeId>(defaultFrom);
+  const [to, setTo] = useState<NodeId>(defaultTo);
   const [payload, setPayload] = useState('');
   const [priority, setPriority] = useState<MessagePriority>('ROUTINE');
   const [isSending, setIsSending] = useState(false);
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (auth.user?.role === 'operator') {
+      const lockedFrom: NodeId = auth.user.team === 'B' ? 'TEAM_B' : 'TEAM_A';
+      const lockedTo: NodeId = auth.user.team === 'B' ? 'TEAM_A' : 'TEAM_B';
+      setFrom(lockedFrom);
+      setTo(lockedTo);
+    }
+  }, [auth.user?.role, auth.user?.team]);
 
   // Compute UTF-8 byte count
   const byteLength = new TextEncoder().encode(payload).length;
@@ -45,13 +63,19 @@ export const SendMessageView: React.FC = () => {
     e.preventDefault();
     if (!payload.trim() || isOverLimit || isSending) return;
 
-    if (currentUser.role === 'viewer') {
-      alert('Unauthorized: Observers / Viewers have read-only privileges. Switch to Operator or Admin role in top bar.');
+    if (auth.user?.role === 'viewer') {
+      setErrorMessage('Viewer accounts have read-only privileges. Transmissions are disabled.');
+      return;
+    }
+
+    if (auth.user?.role === 'admin') {
+      setErrorMessage('Admin oversight role: Admins may dispatch diagnostic PINGs, but cannot originate team field messages.');
       return;
     }
 
     setIsSending(true);
-    setStatusFeedback('Buffering payload to serial bridge...');
+    setStatusFeedback('Encrypting and buffering packet to LoRa bridge...');
+    setErrorMessage(null);
 
     try {
       await sendMessage(from, to, payload.trim(), priority, false);
@@ -61,9 +85,10 @@ export const SendMessageView: React.FC = () => {
         setIsSending(false);
         setStatusFeedback(null);
       }, 3500);
-    } catch (err) {
+    } catch (err: any) {
       setIsSending(false);
-      setStatusFeedback('Transmission error.');
+      setErrorMessage(err.message || 'Transmission error.');
+      setStatusFeedback(null);
     }
   };
 
@@ -87,14 +112,50 @@ export const SendMessageView: React.FC = () => {
           <button
             type="button"
             onClick={() => sendTestPing(from, to)}
-            disabled={currentUser.role === 'viewer'}
-            className="px-3 py-1.5 rounded-lg bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-700/60 text-xs font-mono font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
+            disabled={auth.user?.role === 'viewer'}
+            className="px-3 py-1.5 rounded-lg bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-700/60 text-xs font-mono font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
           >
             <Zap className="w-3.5 h-3.5" />
             <span>Send Self-Test Ping</span>
           </button>
         </div>
       </div>
+
+      {/* Role Notice Banners */}
+      {auth.user?.role === 'viewer' && (
+        <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex items-center gap-3 text-xs text-slate-300">
+          <Info className="w-4 h-4 text-cyan-400 shrink-0" />
+          <div>
+            <span className="font-semibold text-white">Viewer Account (Read-Only):</span> You have observation access to real-time telemetry and incoming message feeds. Message origination is restricted to authenticated ground operators.
+          </div>
+        </div>
+      )}
+
+      {auth.user?.role === 'admin' && (
+        <div className="bg-amber-950/30 border border-amber-500/30 rounded-xl p-4 flex items-start justify-between gap-3 text-xs text-amber-300">
+          <div className="flex items-start gap-2.5">
+            <Shield className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-semibold text-white">Administrative Oversight:</span> Per SkyBridge security architecture, Admin accounts oversee network state and may dispatch diagnostic PINGs, but cannot inject team traffic as Team A or Team B.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => sendTestPing('TEAM_A', 'TEAM_B')}
+            className="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 rounded font-mono text-[11px] font-bold shrink-0 transition-colors"
+          >
+            Dispatch Admin PING
+          </button>
+        </div>
+      )}
+
+      {/* Error Message */}
+      {errorMessage && (
+        <div className="bg-rose-950/40 border border-rose-500/40 rounded-xl p-4 flex items-center gap-3 text-xs text-rose-300 font-mono">
+          <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-6 space-y-6">
@@ -104,38 +165,38 @@ export const SendMessageView: React.FC = () => {
               <label className="block text-xs font-mono font-semibold text-slate-300 uppercase mb-2">
                 Origin Station (FROM)
               </label>
-              <select
-                value={from}
-                onChange={(e) => {
-                  const val = e.target.value as NodeId;
-                  setFrom(val);
-                  if (val === to) {
-                    setTo(val === 'TEAM_A' ? 'TEAM_B' : 'TEAM_A');
-                  }
-                }}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 font-mono focus:border-cyan-500 focus:outline-none"
-              >
-                <option value="TEAM_A">TEAM A — Ground Base Alpha</option>
-                <option value="TEAM_B">TEAM B — Search Extraction Bravo</option>
-              </select>
+              {auth.user?.role === 'operator' ? (
+                <div className="w-full bg-slate-950 border border-cyan-500/40 rounded-lg p-3 text-sm text-slate-200 font-mono flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-cyan-400" />
+                    <span className="font-bold text-cyan-300">
+                      TEAM {auth.user.team} — Ground Base {auth.user.team === 'A' ? 'Alpha' : 'Bravo'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-400 uppercase font-semibold">
+                    Token Locked
+                  </span>
+                </div>
+              ) : (
+                <div className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-slate-400 font-mono">
+                  Origin disabled for {auth.user?.role || currentUser.role}
+                </div>
+              )}
+              <p className="text-[11px] text-slate-500 font-mono mt-1">
+                Server middleware enforces identity matching your cryptographic token claim.
+              </p>
             </div>
 
             <div>
               <label className="block text-xs font-mono font-semibold text-slate-300 uppercase mb-2">
                 Destination Station (TO)
               </label>
-              <select
-                value={to}
-                onChange={(e) => setTo(e.target.value as NodeId)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 font-mono focus:border-cyan-500 focus:outline-none"
-              >
-                <option value="TEAM_B" disabled={from === 'TEAM_B'}>
-                  TEAM B — Search Extraction Bravo
-                </option>
-                <option value="TEAM_A" disabled={from === 'TEAM_A'}>
-                  TEAM A — Ground Base Alpha
-                </option>
-              </select>
+              <div className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-300 font-mono flex items-center justify-between">
+                <span>
+                  TEAM {to === 'TEAM_A' ? 'A' : 'B'} — {to === 'TEAM_A' ? 'Ground Base Alpha' : 'Search Extraction Bravo'}
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono">Direct Relay</span>
+              </div>
             </div>
           </div>
 
@@ -151,7 +212,8 @@ export const SendMessageView: React.FC = () => {
                   key={tpl}
                   type="button"
                   onClick={() => handleSelectTemplate(tpl)}
-                  className="px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-300 hover:text-cyan-300 border border-slate-800 hover:border-cyan-500/40 text-xs font-mono transition-all"
+                  disabled={auth.user?.role === 'viewer' || auth.user?.role === 'admin'}
+                  className="px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-300 hover:text-cyan-300 border border-slate-800 hover:border-cyan-500/40 text-xs font-mono transition-all disabled:opacity-40"
                 >
                   {tpl}
                 </button>
@@ -178,42 +240,42 @@ export const SendMessageView: React.FC = () => {
             <textarea
               rows={4}
               value={payload}
+              disabled={auth.user?.role === 'viewer' || auth.user?.role === 'admin'}
               onChange={(e) => setPayload(e.target.value)}
-              placeholder="Type tactical report or emergency message..."
-              className={`w-full bg-slate-950 rounded-lg p-3 text-sm text-slate-200 font-mono border focus:outline-none transition-colors ${
-                isOverLimit ? 'border-rose-500 focus:border-rose-400' : 'border-slate-700 focus:border-cyan-500'
-              }`}
+              placeholder={
+                auth.user?.role === 'viewer'
+                  ? 'Viewer account: transmission disabled.'
+                  : auth.user?.role === 'admin'
+                  ? 'Admin account: oversight role. Use diagnostic PING button.'
+                  : 'Enter tactical message payload to be packetized into LoRa frame...'
+              }
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 font-mono focus:border-cyan-500 focus:outline-none disabled:opacity-50"
             />
-            <p className="text-[11px] text-slate-500 mt-1">
-              SX1278 payload constraint: Enforced ~220 bytes max for single-packet non-fragmented LoRa transmission.
-            </p>
           </div>
 
-          {/* Operator-assigned Priority */}
+          {/* Priority Selection */}
           <div>
             <label className="block text-xs font-mono font-semibold text-slate-300 uppercase mb-2">
-              Operator-Assigned Priority
+              Priority Classification
             </label>
             <div className="grid grid-cols-3 gap-3">
               {(['ROUTINE', 'URGENT', 'CRITICAL'] as MessagePriority[]).map((p) => (
                 <button
                   key={p}
                   type="button"
+                  disabled={auth.user?.role === 'viewer' || auth.user?.role === 'admin'}
                   onClick={() => setPriority(p)}
-                  className={`p-3 rounded-lg border text-xs font-mono font-bold transition-all text-center ${
+                  className={`py-2 px-3 rounded-lg border text-xs font-mono font-semibold transition-all ${
                     priority === p
                       ? p === 'CRITICAL'
-                        ? 'bg-rose-950/60 border-rose-500 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.2)]'
+                        ? 'bg-rose-500/20 border-rose-500 text-rose-300'
                         : p === 'URGENT'
-                        ? 'bg-amber-950/60 border-amber-500 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
-                        : 'bg-cyan-950/60 border-cyan-500 text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.2)]'
-                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
-                  }`}
+                        ? 'bg-amber-500/20 border-amber-500 text-amber-300'
+                        : 'bg-cyan-500/20 border-cyan-500 text-cyan-300'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                  } disabled:opacity-50`}
                 >
-                  <div className="uppercase">{p}</div>
-                  <div className="text-[10px] font-normal text-slate-400 mt-0.5">
-                    {p === 'CRITICAL' ? 'Audio alert + beacon' : p === 'URGENT' ? 'Expedited relay' : 'Standard traffic'}
-                  </div>
+                  {p}
                 </button>
               ))}
             </div>
@@ -222,7 +284,7 @@ export const SendMessageView: React.FC = () => {
             </p>
           </div>
 
-          {/* Feedback or Active Transmission status */}
+          {/* Status Feedback */}
           {statusFeedback && (
             <div className="p-3 bg-cyan-950/40 border border-cyan-600/40 rounded-lg text-xs font-mono text-cyan-300 flex items-center gap-2 animate-pulse">
               <Clock className="w-4 h-4 text-cyan-400" />
@@ -238,8 +300,14 @@ export const SendMessageView: React.FC = () => {
 
             <button
               type="submit"
-              disabled={!payload.trim() || isOverLimit || isSending || currentUser.role === 'viewer'}
-              className="px-6 py-3 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs font-mono rounded-xl transition-all shadow-[0_0_20px_rgba(6,182,212,0.3)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              disabled={
+                !payload.trim() ||
+                isOverLimit ||
+                isSending ||
+                auth.user?.role === 'viewer' ||
+                auth.user?.role === 'admin'
+              }
+              className="px-6 py-3 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs font-mono rounded-xl transition-all shadow-[0_0_20px_rgba(6,182,212,0.3)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer"
             >
               <Send className="w-4 h-4" />
               <span>{isSending ? 'TRANSMITTING ACROSS LORA...' : 'BROADCAST VIA DRONE RELAY'}</span>

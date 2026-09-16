@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppProvider, useApp } from './context/AppContext';
 import { TopBar } from './components/common/TopBar';
 import { Sidebar } from './components/common/Sidebar';
 import { DemoBanner } from './components/common/DemoBanner';
 import { CommandPalette } from './components/common/CommandPalette';
-import { AlertOctagon, ArrowRight, Minimize2 } from 'lucide-react';
+import { AlertOctagon, ArrowRight, Minimize2, Loader2 } from 'lucide-react';
 
 // Page Views
+import { Login } from './components/pages/Login';
 import { LandingView } from './components/pages/LandingView';
 import { OverviewView } from './components/pages/OverviewView';
 import { LiveCommView } from './components/pages/LiveCommView';
@@ -184,10 +186,44 @@ const MainLayout: React.FC = () => {
   );
 };
 
+const RootNavigation: React.FC = () => {
+  const { isAuthenticated, restoring } = useAuth();
+  const { activeTab, setActiveTab } = useApp();
+
+  if (restoring) {
+    return (
+      <div className="min-h-screen bg-[#070A0E] flex items-center justify-center text-slate-400 font-mono text-xs">
+        <div className="flex items-center gap-2.5">
+          <Loader2 size={16} className="text-emerald-500 animate-spin" />
+          <span>Verifying SkyBridge session authorization...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Allow visitors to view the cinematic landing narrative
+  if (activeTab === 'landing') {
+    return (
+      <main id="skybridge-landing-container" className="min-h-screen bg-[#070a0f] text-slate-100">
+        <LandingView />
+      </main>
+    );
+  }
+
+  // If unauthenticated and on login/overview, present the login screen with landing access
+  if (!isAuthenticated && activeTab !== 'status' && activeTab !== 'docs') {
+    return <Login onOpenLanding={() => setActiveTab('landing')} />;
+  }
+
+  return <MainLayout />;
+};
+
 export default function App() {
   return (
-    <AppProvider>
-      <MainLayout />
-    </AppProvider>
+    <AuthProvider>
+      <AppProvider>
+        <RootNavigation />
+      </AppProvider>
+    </AuthProvider>
   );
 }

@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useAuth } from './AuthContext';
+import { api } from '../services/api';
 import {
   AuditLogEntry,
   DeviceNode,
@@ -73,18 +75,82 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [mode, setMode] = useState<'DEMO' | 'LIVE'>('DEMO');
+  const auth = useAuth();
+  const sessionMode = auth.mode === 'live' ? 'LIVE' : 'DEMO';
+
+  const [mode, setMode] = useState<'DEMO' | 'LIVE'>(sessionMode);
   const [theme, setThemeState] = useState<'dark' | 'light'>('dark');
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [reducedMotion, setReducedMotion] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<string>('landing');
-  const [currentUser, setCurrentUser] = useState<User>(INITIAL_USERS[0]);
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
-  const [devices, setDevices] = useState<DeviceNode[]>(INITIAL_DEVICES);
-  const [events, setEvents] = useState<SystemEvent[]>(INITIAL_EVENTS);
+  const [activeTab, setActiveTab] = useState<string>('overview');
+
+  // Derive currentUser authoritatively from AuthContext
+  const getAuthUser = (): User => {
+    if (!auth.user) return INITIAL_USERS[0];
+    const match = INITIAL_USERS.find(
+      (u) => u.username.toLowerCase() === auth.user?.username.toLowerCase()
+    );
+    if (match) return match;
+    return {
+      id: auth.user.id,
+      username: auth.user.username,
+      name: auth.user.name || auth.user.username,
+      role: auth.user.role as UserRole,
+      callsign: auth.user.callsign || auth.user.username.toUpperCase(),
+      team: (auth.user.team as any) || undefined,
+      avatar: auth.user.username.slice(0, 2).toUpperCase(),
+    };
+  };
+
+  const [currentUser, setCurrentUser] = useState<User>(getAuthUser());
+
+  // Check 13: In Live Mode with all hardware off: Nodes offline, feed empty, stats zero
+  const [messages, setMessages] = useState<Message[]>(
+    sessionMode === 'LIVE' ? [] : INITIAL_MESSAGES
+  );
+  const [devices, setDevices] = useState<DeviceNode[]>(
+    sessionMode === 'LIVE'
+      ? INITIAL_DEVICES.map((d) => ({ ...d, status: 'offline', linkQuality: 0 }))
+      : INITIAL_DEVICES
+  );
+  const [events, setEvents] = useState<SystemEvent[]>(
+    sessionMode === 'LIVE'
+      ? [{ id: 'evt_init', timestamp: new Date().toLocaleTimeString(), type: 'SYSTEM', sourceNode: 'DRONE', message: 'Live Mode Gateway initialized. Awaiting USB hardware telemetry.' }]
+      : INITIAL_EVENTS
+  );
   const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(INITIAL_AUDIT_LOGS);
   const [activeTransmission, setActiveTransmission] = useState<Message | null>(null);
+
+  // Sync mode and user whenever auth changes
+  useEffect(() => {
+    const nextMode = auth.mode === 'live' ? 'LIVE' : 'DEMO';
+    setMode(nextMode);
+    setCurrentUser(getAuthUser());
+    if (nextMode === 'LIVE') {
+      setMessages([]);
+      setDevices(INITIAL_DEVICES.map((d) => ({ ...d, status: 'offline', linkQuality: 0 })));
+      setSerialBridge({
+        connected: false,
+        port: '/dev/ttyUSB0',
+        baudRate: 115200,
+        statusMessage: 'Live mode active. Physical hardware disconnected. An empty live feed is the expected state until hardware connects.',
+        reconnectAttempts: 0,
+        isSimulated: false,
+      });
+    } else {
+      setMessages(INITIAL_MESSAGES);
+      setDevices(INITIAL_DEVICES);
+      setSerialBridge({
+        connected: false,
+        port: '/dev/ttyUSB0',
+        baudRate: 115200,
+        statusMessage: 'Demo simulation bridge active. Telemetry generated in-memory.',
+        reconnectAttempts: 0,
+        isSimulated: true,
+      });
+    }
+  }, [auth.mode, auth.user?.username]);
 
   // New Design System Modes
   const [kioskMode, setKioskMode] = useState<boolean>(false);
@@ -96,9 +162,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     connected: false,
     port: '/dev/ttyUSB0',
     baudRate: 115200,
-    statusMessage: 'Physical hardware disconnected. Running in isolated DEMO simulation mode.',
+    statusMessage:
+      sessionMode === 'LIVE'
+        ? 'Live mode active. Physical hardware disconnected.'
+        : 'Demo simulation bridge active.',
     reconnectAttempts: 0,
-    isSimulated: true,
+    isSimulated: sessionMode === 'DEMO',
   });
 
   // Calculate real unacknowledged critical messages (Incident / Alert Mode trigger)
@@ -188,39 +257,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const toggleDemoMode = () => {
-    if (currentUser.role !== 'admin') {
-      alert('Action unauthorized: Only Administrators can toggle Live / Demo execution modes.');
-      return;
-    }
-    const nextMode = mode === 'DEMO' ? 'LIVE' : 'DEMO';
-    setMode(nextMode);
-
-    const newAudit: AuditLogEntry = {
-      id: `aud_${Date.now()}`,
-      timestamp: new Date().toLocaleTimeString(),
-      actor: currentUser.username,
-      role: currentUser.role,
-      action: nextMode === 'DEMO' ? 'DEMO_MODE_ENABLE' : 'LIVE_MODE_ENABLE',
-      target: 'Execution Mode Toggle',
-      metadata: { previous: mode, current: nextMode },
-    };
-    setAuditLogs((prev) => [newAudit, ...prev]);
-
-    if (nextMode === 'LIVE') {
-      setSerialBridge((prev) => ({
-        ...prev,
-        connected: false,
-        isSimulated: false,
-        statusMessage: 'Serial bridge port /dev/ttyUSB0 not detected. Connect ESP32 via USB.',
-      }));
-    } else {
-      setSerialBridge((prev) => ({
-        ...prev,
-        connected: false,
-        isSimulated: true,
-        statusMessage: 'Demo simulation bridge active.',
-      }));
-    }
+    // Mode is immutable in the session token. Switching modes means signing out and back in
+    const targetMode = mode === 'DEMO' ? 'live' : 'demo';
+    auth.switchModeViaLogout(targetMode);
   };
 
   const connectSerial = (port = '/dev/ttyUSB0', baud = 115200) => {
@@ -305,6 +344,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           },
         ],
       };
+
+      // Map to backend wire format: 'TEAM_A' -> 'A', 'TEAM_B' -> 'B'
+      const backendFrom = from === 'TEAM_A' ? 'A' : from === 'TEAM_B' ? 'B' : from;
+      const backendTo = to === 'TEAM_A' ? 'A' : to === 'TEAM_B' ? 'B' : to;
+
+      try {
+        await api.post('/messages', {
+          from: backendFrom,
+          to: backendTo,
+          payload,
+          priority: priority.toLowerCase(),
+          type: isTestPing ? 'PING' : 'MSG',
+        });
+      } catch (err: any) {
+        if (mode === 'LIVE') {
+          // Check 12: Send with cable unplugged: message stored failed, never delivered
+          const failedMsg: Message = {
+            ...newMsg,
+            status: 'FAILED',
+            hops: [
+              ...newMsg.hops,
+              {
+                node: from,
+                action: `Failed: ${err.message || 'Serial bridge not connected'}`,
+                timestamp: nowStr,
+              },
+            ],
+          };
+          setMessages((prev) => [failedMsg, ...prev]);
+          const failureNotif: NotificationItem = {
+            id: `notif_fail_${Date.now()}`,
+            title: 'Live Transmission Failed',
+            message: `Could not transmit to ${to}: ${err.message || 'Serial bridge disconnected.'}`,
+            severity: 'critical',
+            timestamp: nowStr,
+            read: false,
+            relatedMsgId: msgID,
+            isDemo: false,
+          };
+          setNotifications((prev) => [failureNotif, ...prev]);
+          throw err;
+        }
+      }
 
       setMessages((prev) => [newMsg, ...prev]);
       setActiveTransmission(newMsg);
