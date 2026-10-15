@@ -2,6 +2,9 @@ import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { ScrollCinematic } from '../landing/ScrollCinematic';
+import { HardwareShowcase } from '../landing/HardwareShowcase';
+import { FloatingNav } from '../ui/floating-navbar';
+import { TextGenerateEffect } from '../ui/text-generate-effect';
 import {
   Radio,
   ArrowRight,
@@ -44,51 +47,49 @@ export const LandingView: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#070a0f] text-slate-100 flex flex-col selection:bg-cyan-500/20 selection:text-cyan-300">
-      {/* Top Public Navigation */}
-      <nav className="border-b border-slate-800/80 bg-slate-950/80 sticky top-0 z-30 backdrop-blur-md px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-[0_0_12px_rgba(6,182,212,0.3)]">
-            <Radio className="w-4 h-4 text-slate-950" />
+      {/* Top Public Navigation: Aceternity Floating Navbar (same routes, auth + launch actions) */}
+      <FloatingNav
+        brand={
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-[0_0_12px_rgba(6,182,212,0.3)]">
+              <Radio className="w-4 h-4 text-slate-950" />
+            </div>
+            <span className="font-mono font-bold tracking-tight text-lg text-slate-100">
+              SKYBRIDGE
+            </span>
+            <span className="hidden md:inline text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-800">
+              MERN + LoRa
+            </span>
           </div>
-          <span className="font-mono font-bold tracking-tight text-lg text-slate-100">
-            SKYBRIDGE
-          </span>
-          <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-800">
-            MERN + LoRa
-          </span>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setActiveTab('docs')}
-            className="text-xs text-slate-400 hover:text-slate-200 hidden sm:block transition-colors cursor-pointer"
-          >
-            Architecture Docs
-          </button>
-          <button
-            onClick={() => setActiveTab('status')}
-            className="text-xs text-slate-400 hover:text-slate-200 hidden sm:block transition-colors cursor-pointer"
-          >
-            System Status
-          </button>
-          {!isAuthenticated && (
+        }
+        navItems={[
+          { name: 'Architecture Docs', onClick: () => setActiveTab('docs'), hideOnMobile: true },
+          { name: 'System Status', onClick: () => setActiveTab('status'), hideOnMobile: true },
+        ]}
+        actions={
+          <>
+            {!isAuthenticated && (
+              <button
+                onClick={handleOpenLogin}
+                className="text-xs text-cyan-400 hover:text-cyan-300 px-3 py-1.5 rounded-full border border-cyan-800/60 bg-cyan-950/40 transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Sign In</span>
+              </button>
+            )}
             <button
-              onClick={handleOpenLogin}
-              className="text-xs text-cyan-400 hover:text-cyan-300 px-3 py-1.5 rounded-lg border border-cyan-800/60 bg-cyan-950/40 transition-colors flex items-center gap-1.5 cursor-pointer"
+              onClick={handleLaunchConsole}
+              className="px-3.5 py-1.5 rounded-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-xs transition-all shadow-[0_0_15px_rgba(6,182,212,0.25)] flex items-center gap-1.5 cursor-pointer"
             >
-              <LogIn className="w-3.5 h-3.5" />
-              <span>Sign In</span>
+              <span className="sm:hidden">{isAuthenticated ? 'Console' : 'Launch'}</span>
+              <span className="hidden sm:inline">
+                {isAuthenticated ? 'Return to Console' : 'Launch Demo Console'}
+              </span>
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
-          )}
-          <button
-            onClick={handleLaunchConsole}
-            className="px-3.5 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-xs transition-all shadow-[0_0_15px_rgba(6,182,212,0.25)] flex items-center gap-1.5 cursor-pointer"
-          >
-            <span>{isAuthenticated ? 'Return to Console' : 'Launch Demo Console'}</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </nav>
+          </>
+        }
+      />
 
       {/* 1. Scroll-Cinematic Pinned Hero Sequence */}
       <ScrollCinematic />
@@ -102,9 +103,7 @@ export const LandingView: React.FC = () => {
           <div className="text-xs font-mono text-rose-400 uppercase tracking-wider mb-2 font-semibold">
             Operational Challenge
           </div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-slate-100">
-            Infrastructure Failure in Disaster Zones
-          </h2>
+          <TextGenerateEffect as="h2" words="Infrastructure Failure in Disaster Zones" className="text-2xl sm:text-3xl font-bold text-slate-100" />
           <p className="text-sm text-slate-400 mt-3">
             In earthquakes, flash floods, landslides, and remote wilderness search operations, traditional communications crumble within minutes.
           </p>
@@ -144,9 +143,7 @@ export const LandingView: React.FC = () => {
             <div className="text-xs font-mono text-cyan-400 uppercase tracking-wider mb-2 font-semibold">
               The Architecture
             </div>
-            <h2 className="text-2xl sm:text-3xl font-bold text-slate-100">
-              Airborne Store-and-Forward LoRa
-            </h2>
+            <TextGenerateEffect as="h2" words="Airborne Store-and-Forward LoRa" className="text-2xl sm:text-3xl font-bold text-slate-100" />
             <p className="text-sm text-slate-400 mt-3">
               By hoisting a low-power LoRa repeater into the air aboard an F450 quadcopter, SkyBridge establishes an elevated radio horizon above terrain obstacles.
             </p>
@@ -188,15 +185,16 @@ export const LandingView: React.FC = () => {
         </div>
       </section>
 
+      {/* 3b. Hardware Reveal (Aceternity 3D Card Effect) */}
+      <HardwareShowcase />
+
       {/* 4. Honest Scope vs Future Scope */}
       <section className="py-16 px-6 border-b border-slate-800/60 max-w-5xl mx-auto">
         <div className="text-center max-w-2xl mx-auto mb-10">
           <div className="text-xs font-mono text-purple-400 uppercase tracking-wider mb-2 font-semibold">
             Engineering Integrity
           </div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-slate-100">
-            Current Physical Scope vs. Future Scope
-          </h2>
+          <TextGenerateEffect as="h2" words="Current Physical Scope vs. Future Scope" className="text-2xl sm:text-3xl font-bold text-slate-100" />
           <p className="text-sm text-slate-400 mt-2">
             Per the SkyBridge Ground Truth: we never invent hardware capability or simulate fake GPS/telemetry.
           </p>

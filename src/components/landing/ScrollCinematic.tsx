@@ -3,6 +3,7 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import Lenis from 'lenis';
 import { useApp } from '../../context/AppContext';
+import { Spotlight } from '../ui/spotlight';
 import {
   ArrowRight,
   Radio,
@@ -655,6 +656,16 @@ export const ScrollCinematic: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Aceternity Spotlight: cinematic opening light, fades out once scene 1 ends */}
+        <div
+          aria-hidden="true"
+          className={`absolute inset-0 pointer-events-none overflow-hidden transition-opacity duration-700 ${
+            activeSceneIndex === 0 ? 'opacity-100' : 'opacity-0'
+          }`}
+        >
+          <Spotlight className="-top-40 left-0 md:-top-20 md:left-60" fill="#22D3EE" />
         </div>
 
         {/* Scene 1 Centered Initial Wordmark */}
