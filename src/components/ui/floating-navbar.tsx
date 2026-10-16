@@ -1,91 +1,81 @@
-// NOT OFFICIAL SOURCE. Hand-written approximation of the Aceternity UI "Floating Navbar" component,
-// created because the official registry (ui.aceternity.com) was unreachable from the dev sandbox.
-// Replace with the real file: npx shadcn@latest add @aceternity/<component-name> (see components.json).
-// Project-specific changes live in this file; check call sites in LandingView/HardwareShowcase before overwriting.
-import React, { useState } from 'react';
+"use client";
+import React, { useState } from "react";
 import {
   motion,
   AnimatePresence,
   useScroll,
   useMotionValueEvent,
-  useReducedMotion,
-} from 'motion/react';
-import { cn } from '@/src/lib/utils';
-
-export type FloatingNavItem = {
-  name: string;
-  onClick: () => void;
-  icon?: React.ReactNode;
-  /** Hide this item on very small screens (the original nav did this for text links). */
-  hideOnMobile?: boolean;
-};
+} from "motion/react";
+import { cn } from "@/src/lib/utils";
 
 export const FloatingNav = ({
-  brand,
   navItems,
-  actions,
-  className,
-}: {
-  brand?: React.ReactNode;
-  navItems: FloatingNavItem[];
-  actions?: React.ReactNode;
-  className?: string;
+  className
 }) => {
-  const { scrollY } = useScroll();
-  const reduceMotion = useReducedMotion();
-  const [visible, setVisible] = useState(true);
+  const { scrollYProgress } = useScroll();
+  const [visible, setVisible] = useState(false);
 
-  useMotionValueEvent(scrollY, 'change', (current) => {
-    const previous = scrollY.getPrevious() ?? 0;
-    if (current < 80) {
-      setVisible(true); // always shown at the very top of the page
-    } else if (current < previous) {
-      setVisible(true); // scrolling up
-    } else if (current > previous) {
-      setVisible(false); // scrolling down
+  useMotionValueEvent(scrollYProgress, "change", (current) => {
+    if (typeof current === "number") {
+      const direction = current - scrollYProgress.getPrevious();
+
+      if (scrollYProgress.get() < 0.05) {
+        setVisible(false);
+      } else {
+        if (direction < 0) {
+          setVisible(true);
+        } else {
+          setVisible(false);
+        }
+      }
     }
   });
 
   return (
     <AnimatePresence mode="wait">
-      <motion.nav
-        aria-label="Primary"
-        initial={{ opacity: 0, y: reduceMotion ? 0 : -100 }}
-        animate={{ opacity: visible ? 1 : 0, y: visible || reduceMotion ? 0 : -100 }}
-        transition={{ duration: reduceMotion ? 0 : 0.2 }}
-        // Hidden state must not be tabbable / clickable.
-        inert={!visible}
-        onFocusCapture={() => setVisible(true)}
+      <motion.div
+        initial={{
+          opacity: 1,
+          y: -100,
+        }}
+        animate={{
+          y: visible ? 0 : -100,
+          opacity: visible ? 1 : 0,
+        }}
+        transition={{
+          duration: 0.2,
+        }}
         className={cn(
-          'fixed top-3 inset-x-0 mx-auto z-40 w-[calc(100%-1.5rem)] max-w-4xl',
-          'flex items-center justify-between gap-3 rounded-full',
-          'border border-slate-700/70 bg-slate-950/80 backdrop-blur-md',
-          'shadow-[0_8px_32px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.04)]',
-          'pl-4 pr-2 py-2',
-          !visible && 'pointer-events-none',
-          className,
-        )}
-      >
-        {brand}
+          "flex max-w-fit fixed top-10 inset-x-0 mx-auto z-[5000] items-center justify-center",
+          className
+        )}>
+        <div
+          className="flex items-center justify-center gap-2 rounded-full border border-white/10 bg-white/80 px-2 py-1.5 shadow-lg shadow-black/10 backdrop-blur-md dark:border-white/10 dark:bg-black/50">
+          {/* Nav items container */}
+          <div className="flex items-center gap-1">
+            {navItems.map((navItem, idx) => (
+              <a
+                key={`link-${idx}`}
+                href={navItem.link}
+                className={cn(
+                  "relative flex items-center gap-1 rounded-full px-4 py-2 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-white/10 dark:hover:text-white"
+                )}>
+                <span className="block sm:hidden">{navItem.icon}</span>
+                <span className="hidden sm:block">{navItem.name}</span>
+              </a>
+            ))}
+          </div>
 
-        <div className="flex items-center gap-1 sm:gap-2">
-          {navItems.map((item) => (
-            <button
-              key={item.name}
-              type="button"
-              onClick={item.onClick}
-              className={cn(
-                'items-center gap-1 rounded-full px-3 py-1.5 text-xs text-slate-400 hover:text-slate-100 transition-colors cursor-pointer',
-                item.hideOnMobile ? 'hidden sm:flex' : 'flex',
-              )}
-            >
-              {item.icon}
-              <span>{item.name}</span>
-            </button>
-          ))}
-          {actions}
+          {/* Divider */}
+          <div className="h-5 w-px bg-neutral-200 dark:bg-white/10" />
+
+          {/* CTA Button */}
+          <button
+            className="relative rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-neutral-800 hover:shadow-lg hover:shadow-neutral-900/20 dark:bg-white dark:text-black dark:hover:bg-neutral-100 dark:hover:shadow-white/20">
+            <span>Login</span>
+          </button>
         </div>
-      </motion.nav>
+      </motion.div>
     </AnimatePresence>
   );
 };

@@ -1,7 +1,19 @@
 import React from 'react';
 import { Cpu, Radio, Plane } from 'lucide-react';
+import { useReducedMotion } from 'motion/react';
 import { CardBody, CardContainer, CardItem } from '../ui/3d-card';
-import { TextGenerateEffect } from '../ui/text-generate-effect';
+import { RevealHeading } from './RevealHeading';
+
+// Under prefers-reduced-motion the official 3D tilt is swapped for static equivalents (same markup/classes).
+const PlainContainer = ({ children }: { children?: React.ReactNode; className?: string; containerClassName?: string }) => (
+  <div className="w-full">{children}</div>
+);
+const PlainBody = ({ children, className }: { children?: React.ReactNode; className?: string }) => (
+  <div className={className}>{children}</div>
+);
+const PlainItem = ({ as: Tag = 'div', children, className, translateZ: _z, ...rest }: any) => (
+  <Tag className={className} {...rest}>{children}</Tag>
+);
 
 // Every spec below is copied from the project's own Hardware BOM (HardwareView.tsx) and the
 // landing copy. Nothing here is live telemetry or an invented capability.
@@ -59,7 +71,12 @@ const HARDWARE: {
   },
 ];
 
-export const HardwareShowcase: React.FC = () => (
+export const HardwareShowcase: React.FC = () => {
+  const reduceMotion = useReducedMotion();
+  const Container = reduceMotion ? PlainContainer : CardContainer;
+  const Body = reduceMotion ? PlainBody : CardBody;
+  const Item = reduceMotion ? PlainItem : CardItem;
+  return (
   <section
     id="landing-hardware"
     aria-labelledby="landing-hardware-heading"
@@ -70,14 +87,7 @@ export const HardwareShowcase: React.FC = () => (
         <div className="text-xs font-mono text-cyan-400 uppercase tracking-wider mb-2 font-semibold">
           Hardware Reveal
         </div>
-        <TextGenerateEffect
-          as="h2"
-          words="The physical build behind the network"
-          className="text-2xl sm:text-3xl text-slate-100"
-        />
-        <p id="landing-hardware-heading" className="sr-only">
-          Hardware components used in SkyBridge
-        </p>
+        <RevealHeading id="landing-hardware-heading" words="The physical build behind the network" />
         <p className="text-sm text-slate-400 mt-3">
           Real components from the project&apos;s bill of materials. GPS, camera and Raspberry Pi
           boards are future scope and are not part of this build.
@@ -87,9 +97,9 @@ export const HardwareShowcase: React.FC = () => (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {HARDWARE.map((item) => (
           <React.Fragment key={item.id}>
-          <CardContainer containerClassName="py-0" className="w-full">
-            <CardBody className="group/card relative w-full h-auto rounded-2xl border border-slate-800 bg-slate-900/80 p-6 hover:border-cyan-500/40 hover:shadow-[0_0_40px_rgba(6,182,212,0.12)] transition-colors">
-              <CardItem translateZ={40} className="flex items-center justify-between w-full">
+          <Container containerClassName="py-0" className="w-full">
+            <Body className="group/card relative w-full h-auto rounded-2xl border border-slate-800 bg-slate-900/80 p-6 hover:border-cyan-500/40 hover:shadow-[0_0_40px_rgba(6,182,212,0.12)] transition-colors">
+              <Item translateZ={40} className="flex items-center justify-between w-full">
                 <div
                   className={`w-10 h-10 rounded-lg border flex items-center justify-center ${item.iconClass}`}
                 >
@@ -100,41 +110,42 @@ export const HardwareShowcase: React.FC = () => (
                 >
                   {item.tag}
                 </span>
-              </CardItem>
+              </Item>
 
-              <CardItem
+              <Item
                 as="h3"
                 translateZ={60}
                 className="mt-5 text-lg font-bold font-mono text-slate-100"
               >
                 {item.title}
-              </CardItem>
+              </Item>
 
-              <CardItem
+              <Item
                 as="p"
                 translateZ={40}
                 className="mt-2 text-xs text-slate-400 leading-relaxed w-full"
               >
                 {item.blurb}
-              </CardItem>
+              </Item>
 
               <div className="mt-5 space-y-2 text-xs font-mono">
                 {item.specs.map((spec) => (
-                  <CardItem
+                  <Item
                     key={spec.label}
                     translateZ={25}
                     className="w-full p-2.5 rounded-lg bg-slate-950 border border-slate-800"
                   >
                     <div className="text-slate-500 text-[10px]">{spec.label}</div>
                     <div className="text-slate-200 font-semibold">{spec.value}</div>
-                  </CardItem>
+                  </Item>
                 ))}
               </div>
-            </CardBody>
-          </CardContainer>
+            </Body>
+          </Container>
           </React.Fragment>
         ))}
       </div>
     </div>
   </section>
 );
+};
