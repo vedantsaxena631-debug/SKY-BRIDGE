@@ -92,7 +92,11 @@ export const LandingView: React.FC = () => {
       />
 
       {/* 1. Scroll-Cinematic Pinned Hero Sequence */}
-      <ScrollCinematic />
+      {/* Plain block wrapper: GSAP's pin-spacer must not sit directly inside this flex-col page,
+          otherwise its pin spacing collapses and the sections below slide over the pinned hero. */}
+      <div>
+        <ScrollCinematic />
+      </div>
 
       {/* Anchor for keyboard skip link */}
       <div id="landing-content-start" className="scroll-mt-16" />
