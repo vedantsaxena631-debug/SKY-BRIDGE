@@ -1,7 +1,7 @@
-// Aceternity UI "Text Generate Effect" (https://ui.aceternity.com/components/text-generate-effect)
-// Adapted: starts when scrolled into view (the original runs on mount, which would finish
-// before below-the-fold headings are seen), renders a real heading tag, and shows plain
-// static text under prefers-reduced-motion.
+// NOT OFFICIAL SOURCE. Hand-written approximation of the Aceternity UI "Text Generate Effect" component,
+// created because the official registry (ui.aceternity.com) was unreachable from the dev sandbox.
+// Replace with the real file: npx shadcn@latest add @aceternity/<component-name> (see components.json).
+// Project-specific changes live in this file; check call sites in LandingView/HardwareShowcase before overwriting.
 import React, { useEffect } from 'react';
 import { motion, stagger, useAnimate, useInView, useReducedMotion } from 'motion/react';
 import { cn } from '@/src/lib/utils';

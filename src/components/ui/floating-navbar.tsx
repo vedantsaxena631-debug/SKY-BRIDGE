@@ -1,7 +1,7 @@
-// Aceternity UI "Floating Navbar" (https://ui.aceternity.com/components/floating-navbar)
-// Adapted for SkyBridge: no Next.js <Link> (the app switches views via state, not routes),
-// an `actions` slot for the auth/launch buttons, always visible at the top of the page,
-// hides on scroll down / reveals on scroll up, keyboard + reduced-motion safe.
+// NOT OFFICIAL SOURCE. Hand-written approximation of the Aceternity UI "Floating Navbar" component,
+// created because the official registry (ui.aceternity.com) was unreachable from the dev sandbox.
+// Replace with the real file: npx shadcn@latest add @aceternity/<component-name> (see components.json).
+// Project-specific changes live in this file; check call sites in LandingView/HardwareShowcase before overwriting.
 import React, { useState } from 'react';
 import {
   motion,

@@ -1,5 +1,7 @@
-// Aceternity UI "3D Card Effect" (https://ui.aceternity.com/components/3d-card-effect)
-// Adapted: tilt/lift is skipped under prefers-reduced-motion and on touch (no hover) devices.
+// NOT OFFICIAL SOURCE. Hand-written approximation of the Aceternity UI "3D Card Effect" component,
+// created because the official registry (ui.aceternity.com) was unreachable from the dev sandbox.
+// Replace with the real file: npx shadcn@latest add @aceternity/<component-name> (see components.json).
+// Project-specific changes live in this file; check call sites in LandingView/HardwareShowcase before overwriting.
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { cn } from '@/src/lib/utils';
 

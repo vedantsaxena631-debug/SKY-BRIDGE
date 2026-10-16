@@ -1,5 +1,7 @@
-// Aceternity UI "Spotlight" (https://ui.aceternity.com/components/spotlight)
-// Requires the --animate-spotlight theme token + @keyframes spotlight in src/index.css.
+// NOT OFFICIAL SOURCE. Hand-written approximation of the Aceternity UI "Spotlight" component,
+// created because the official registry (ui.aceternity.com) was unreachable from the dev sandbox.
+// Replace with the real file: npx shadcn@latest add @aceternity/<component-name> (see components.json).
+// Project-specific changes live in this file; check call sites in LandingView/HardwareShowcase before overwriting.
 import React, { useId } from 'react';
 import { cn } from '@/src/lib/utils';
 
