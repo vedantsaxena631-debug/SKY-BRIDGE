@@ -2,24 +2,41 @@ import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { ScrollCinematic } from '../landing/ScrollCinematic';
+import { Reveal } from '../landing/Reveal';
+import { HardwareReveal } from '../landing/HardwareReveal';
+import { HowItWorks } from '../landing/HowItWorks';
+import { DashboardPreview } from '../landing/DashboardPreview';
+import { MissionClosing } from '../landing/MissionClosing';
 import {
   Radio,
   ArrowRight,
-  Shield,
   WifiOff,
-  Plane,
   Server,
-  Zap,
   CheckCircle2,
-  AlertTriangle,
-  Cpu,
-  Layers,
-  Terminal,
   Clock,
-  ChevronRight,
-  Lock,
   LogIn,
 } from 'lucide-react';
+
+const PROBLEMS = [
+  {
+    Icon: WifiOff,
+    tone: 'text-rose-400',
+    title: 'Cellular Blackouts',
+    body: 'Base stations lose power, backhaul fiber lines sever, and cell towers collapse, leaving ground teams isolated without basic messaging.',
+  },
+  {
+    Icon: MountainIcon,
+    tone: 'text-amber-400',
+    title: 'Line-of-Sight Blockage',
+    body: 'Rugged ridges, collapsed buildings, and dense canopy obstruct UHF/VHF handheld radios from reaching forward headquarters.',
+  },
+  {
+    Icon: Server,
+    tone: 'text-cyan-400',
+    title: 'Lack of Central Coordination',
+    body: 'Commanders cannot maintain an auditable timeline of tactical sitreps, triage needs, or victim discoveries without a digital log.',
+  },
+];
 
 export const LandingView: React.FC = () => {
   const { setActiveTab } = useApp();
@@ -90,7 +107,7 @@ export const LandingView: React.FC = () => {
         </div>
       </nav>
 
-      {/* 1. Scroll-Cinematic Pinned Hero Sequence */}
+      {/* 1. Scroll-Cinematic Pinned Hero Sequence (opening, the problem, the drone bridge) */}
       <ScrollCinematic />
 
       {/* Anchor for keyboard skip link */}
@@ -98,7 +115,7 @@ export const LandingView: React.FC = () => {
 
       {/* 2. The Problem Statement */}
       <section className="py-16 px-6 border-b border-slate-800/60 max-w-5xl mx-auto">
-        <div className="text-center max-w-2xl mx-auto mb-12">
+        <Reveal className="text-center max-w-2xl mx-auto mb-12">
           <div className="text-xs font-mono text-rose-400 uppercase tracking-wider mb-2 font-semibold">
             Operational Challenge
           </div>
@@ -108,89 +125,33 @@ export const LandingView: React.FC = () => {
           <p className="text-sm text-slate-400 mt-3">
             In earthquakes, flash floods, landslides, and remote wilderness search operations, traditional communications crumble within minutes.
           </p>
-        </div>
+        </Reveal>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-800/80">
-            <WifiOff className="w-6 h-6 text-rose-400 mb-3" />
-            <h3 className="text-sm font-semibold text-slate-200 mb-2">Cellular Blackouts</h3>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Base stations lose power, backhaul fiber lines sever, and cell towers collapse, leaving ground teams isolated without basic messaging.
-            </p>
-          </div>
-
-          <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-800/80">
-            <MountainIcon className="w-6 h-6 text-amber-400 mb-3" />
-            <h3 className="text-sm font-semibold text-slate-200 mb-2">Line-of-Sight Blockage</h3>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Rugged ridges, collapsed buildings, and dense canopy obstruct UHF/VHF handheld radios from reaching forward headquarters.
-            </p>
-          </div>
-
-          <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-800/80">
-            <Server className="w-6 h-6 text-cyan-400 mb-3" />
-            <h3 className="text-sm font-semibold text-slate-200 mb-2">Lack of Central Coordination</h3>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Commanders cannot maintain an auditable timeline of tactical sitreps, triage needs, or victim discoveries without a digital log.
-            </p>
-          </div>
+          {PROBLEMS.map(({ Icon, tone, title, body }, i) => (
+            <Reveal key={title} delay={i * 0.1} className="h-full">
+              <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-800/80 h-full">
+                <Icon className={`w-6 h-6 ${tone} mb-3`} />
+                <h3 className="text-sm font-semibold text-slate-200 mb-2">{title}</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">{body}</p>
+              </div>
+            </Reveal>
+          ))}
         </div>
       </section>
 
-      {/* 3. How SkyBridge Works */}
-      <section className="py-16 px-6 border-b border-slate-800/60 bg-slate-950/40">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center max-w-2xl mx-auto mb-12">
-            <div className="text-xs font-mono text-cyan-400 uppercase tracking-wider mb-2 font-semibold">
-              The Architecture
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-bold text-slate-100">
-              Airborne Store-and-Forward LoRa
-            </h2>
-            <p className="text-sm text-slate-400 mt-3">
-              By hoisting a low-power LoRa repeater into the air aboard an F450 quadcopter, SkyBridge establishes an elevated radio horizon above terrain obstacles.
-            </p>
-          </div>
+      {/* 3. Hardware reveal: flight system vs communication system */}
+      <HardwareReveal />
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
-              <div className="text-xs font-mono text-cyan-400 font-bold">STEP 01</div>
-              <h4 className="text-sm font-semibold text-slate-200">Ground Input</h4>
-              <p className="text-xs text-slate-400">
-                Team A selects a priority template (e.g. "VICTIM FOUND") or drafts a short packet on their ESP32 console.
-              </p>
-            </div>
+      {/* 4. How it works: scroll-driven architecture walkthrough */}
+      <HowItWorks />
 
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
-              <div className="text-xs font-mono text-cyan-400 font-bold">STEP 02</div>
-              <h4 className="text-sm font-semibold text-slate-200">LoRa Uplink</h4>
-              <p className="text-xs text-slate-400">
-                SX1278 transmits the formatted JSON packet over 433 MHz with a unique <code className="text-cyan-300">msgID</code>.
-              </p>
-            </div>
+      {/* 5. Interactive dashboard preview */}
+      <DashboardPreview onLaunch={handleLaunchConsole} isAuthenticated={isAuthenticated} />
 
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
-              <div className="text-xs font-mono text-cyan-400 font-bold">STEP 03</div>
-              <h4 className="text-sm font-semibold text-slate-200">Airborne Repeat</h4>
-              <p className="text-xs text-slate-400">
-                The drone payload verifies the ID against its cache to prevent loops, buffers the packet, and re-broadcasts.
-              </p>
-            </div>
-
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
-              <div className="text-xs font-mono text-cyan-400 font-bold">STEP 04</div>
-              <h4 className="text-sm font-semibold text-slate-200">Delivery & ACK</h4>
-              <p className="text-xs text-slate-400">
-                Team B receives the alert on their OLED display and buzzer, and returns an automated verification ACK.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 4. Honest Scope vs Future Scope */}
+      {/* 6. Honest Scope vs Future Scope */}
       <section className="py-16 px-6 border-b border-slate-800/60 max-w-5xl mx-auto">
-        <div className="text-center max-w-2xl mx-auto mb-10">
+        <Reveal className="text-center max-w-2xl mx-auto mb-10">
           <div className="text-xs font-mono text-purple-400 uppercase tracking-wider mb-2 font-semibold">
             Engineering Integrity
           </div>
@@ -200,97 +161,92 @@ export const LandingView: React.FC = () => {
           <p className="text-sm text-slate-400 mt-2">
             Per the SkyBridge Ground Truth: we never invent hardware capability or simulate fake GPS/telemetry.
           </p>
-        </div>
+        </Reveal>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {/* Implemented Current Scope */}
-          <div className="p-6 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 space-y-4">
-            <div className="flex items-center gap-2 text-emerald-400 font-mono text-sm font-bold">
-              <CheckCircle2 className="w-5 h-5" />
-              <span>CURRENT HARDWARE & MERN STACK</span>
+          <Reveal className="h-full">
+            <div className="p-6 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 space-y-4 h-full">
+              <div className="flex items-center gap-2 text-emerald-400 font-mono text-sm font-bold">
+                <CheckCircle2 className="w-5 h-5" />
+                <span>CURRENT HARDWARE & MERN STACK</span>
+              </div>
+              <ul className="space-y-2.5 text-xs text-slate-300">
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-400 font-bold">•</span>
+                  <span><strong>ESP32 Microcontrollers</strong> running 433 MHz SX1278 LoRa SPI transceivers</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-400 font-bold">•</span>
+                  <span><strong>F450 Quadcopter Drone</strong> with manual FlySky FS-i6X RC control (independent from comms)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-400 font-bold">•</span>
+                  <span><strong>Node.js Serial Gateway</strong> interfacing USB UART to Socket.IO & MongoDB</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-400 font-bold">•</span>
+                  <span><strong>Loop Prevention:</strong> unique msgID de-duplication cache in relay firmware</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-400 font-bold">•</span>
+                  <span><strong>ACK Protocol:</strong> full end-to-end receipt confirmation with retry logic</span>
+                </li>
+              </ul>
             </div>
-            <ul className="space-y-2.5 text-xs text-slate-300">
-              <li className="flex items-start gap-2">
-                <span className="text-emerald-400 font-bold">•</span>
-                <span><strong>ESP32 Microcontrollers</strong> running 433 MHz SX1278 LoRa SPI transceivers</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-emerald-400 font-bold">•</span>
-                <span><strong>F450 Quadcopter Drone</strong> with manual FlySky FS-i6X RC control (independent from comms)</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-emerald-400 font-bold">•</span>
-                <span><strong>Node.js Serial Gateway</strong> interfacing USB UART to Socket.IO & MongoDB</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-emerald-400 font-bold">•</span>
-                <span><strong>Loop Prevention:</strong> unique msgID de-duplication cache in relay firmware</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-emerald-400 font-bold">•</span>
-                <span><strong>ACK Protocol:</strong> full end-to-end receipt confirmation with retry logic</span>
-              </li>
-            </ul>
-          </div>
+          </Reveal>
 
           {/* Explicit Future Scope */}
-          <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-4">
-            <div className="flex items-center gap-2 text-slate-400 font-mono text-sm font-bold">
-              <Clock className="w-5 h-5" />
-              <span>FUTURE EXTENSIONS (OUT OF CURRENT SCOPE)</span>
+          <Reveal delay={0.1} className="h-full">
+            <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-4 h-full">
+              <div className="flex items-center gap-2 text-slate-400 font-mono text-sm font-bold">
+                <Clock className="w-5 h-5" />
+                <span>FUTURE EXTENSIONS (OUT OF CURRENT SCOPE)</span>
+              </div>
+              <ul className="space-y-2.5 text-xs text-slate-400">
+                <li className="flex items-start gap-2">
+                  <span className="text-slate-500 font-bold">•</span>
+                  <span><strong>GPS Geolocation:</strong> NMEA UART modules on ground nodes for map plotting</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-slate-500 font-bold">•</span>
+                  <span><strong>Live FPV Video / Camera:</strong> Airborne Raspberry Pi streaming payload</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-slate-500 font-bold">•</span>
+                  <span><strong>Autonomous Flight:</strong> ArduPilot waypoint patrol and auto-hover station-keeping</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-slate-500 font-bold">•</span>
+                  <span><strong>LoRaWAN Gateways:</strong> Integration with The Things Network (TTN) or ChirpStack</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-slate-500 font-bold">•</span>
+                  <span><strong>Multi-Team Mesh:</strong> Ad-hoc AODV routing beyond two ground teams</span>
+                </li>
+              </ul>
             </div>
-            <ul className="space-y-2.5 text-xs text-slate-400">
-              <li className="flex items-start gap-2">
-                <span className="text-slate-500 font-bold">•</span>
-                <span><strong>GPS Geolocation:</strong> NMEA UART modules on ground nodes for map plotting</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-slate-500 font-bold">•</span>
-                <span><strong>Live FPV Video / Camera:</strong> Airborne Raspberry Pi streaming payload</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-slate-500 font-bold">•</span>
-                <span><strong>Autonomous Flight:</strong> ArduPilot waypoint patrol and auto-hover station-keeping</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-slate-500 font-bold">•</span>
-                <span><strong>LoRaWAN Gateways:</strong> Integration with The Things Network (TTN) or ChirpStack</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-slate-500 font-bold">•</span>
-                <span><strong>Multi-Team Mesh:</strong> Ad-hoc AODV routing beyond two ground teams</span>
-              </li>
-            </ul>
-          </div>
+          </Reveal>
         </div>
       </section>
 
-      {/* 5. Call to Action Footer */}
-      <footer className="mt-auto py-12 px-6 border-t border-slate-800 bg-slate-950 text-center space-y-6">
-        <div className="max-w-xl mx-auto space-y-3">
-          <h3 className="text-xl font-bold text-slate-100">Ready to inspect the network?</h3>
-          <p className="text-xs text-slate-400">
-            Access the live operations console with interactive packet transmission, SITREP reporting, and diagnostic tests.
-          </p>
-          <div className="flex items-center justify-center gap-3 pt-2">
-            <button
-              onClick={handleLaunchConsole}
-              className="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)] flex items-center gap-2 cursor-pointer"
-            >
-              <span>{isAuthenticated ? 'Return to Console' : 'Launch Demo Console'}</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setActiveTab('status')}
-              className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-mono"
-            >
-              Check System Status
-            </button>
-          </div>
-        </div>
+      {/* 7. Mission closing */}
+      <MissionClosing
+        onLaunch={handleLaunchConsole}
+        onDocs={() => setActiveTab('docs')}
+        isAuthenticated={isAuthenticated}
+      />
 
-        <div className="text-[11px] font-mono text-slate-400 pt-6 border-t border-slate-900 flex flex-wrap justify-between items-center max-w-4xl mx-auto">
+      {/* Footer */}
+      <footer className="mt-auto py-8 px-6 border-t border-slate-800 bg-slate-950">
+        <div className="text-[11px] font-mono text-slate-400 flex flex-wrap justify-between items-center gap-2 max-w-4xl mx-auto">
           <span>SkyBridge Emergency Communication Network v2.0</span>
+          <button
+            onClick={() => setActiveTab('status')}
+            className="hover:text-slate-200 transition-colors cursor-pointer"
+          >
+            System Status
+          </button>
           <span>MERN Stack + ESP32 / SX1278 Hardware Reference</span>
         </div>
       </footer>
