@@ -188,7 +188,7 @@ export function Home() {
                   {NAMES[m.from]} to {NAMES[m.to]}
                 </strong>
                 <span className="ios-time">
-                  {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {m.timestamp}
                 </span>
               </div>
               <p>{m.payload}</p>
