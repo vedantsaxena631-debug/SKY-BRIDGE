@@ -1,7 +1,13 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import type { Message, MessagePriority, NodeId } from '../types';
+import type { DeviceNode, Message, MessagePriority, NodeId } from '../types';
+
+// Signal comes from the link quality the app tracks. Battery is not sent by the firmware yet.
+function signalText(d: DeviceNode): string {
+  const quality = (d as DeviceNode & { linkQuality?: number }).linkQuality;
+  return quality && quality > 0 ? `Signal ${quality}%` : 'No signal data';
+}
 
 const NAMES: Record<NodeId, string> = {
   TEAM_A: 'Team A',
@@ -96,7 +102,12 @@ export function Home() {
         <section className="ios-group" aria-label="Network status">
           {devices.map((d) => (
             <div className="ios-row" key={d.id}>
-              <span>{NAMES[d.id] ?? d.name}</span>
+              <div>
+                <div>{NAMES[d.id] ?? d.name}</div>
+                <div className="ios-sub">
+                  {signalText(d)} · Battery not reported yet
+                </div>
+              </div>
               <span className={`ios-status ${d.status.toLowerCase()}`}>
                 {DEVICE_LABEL[d.status] ?? d.status}
               </span>

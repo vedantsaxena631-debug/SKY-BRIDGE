@@ -18,7 +18,8 @@ body {
   --secondary: #8e8e93;
   --sep: #c6c6c8;
   --fill: #e5e5ea;
-  --blue: #007aff;
+  --accent: #000000;
+  --accent-text: #ffffff;
   --green: #34c759;
   --orange: #ff9500;
   --red: #ff3b30;
@@ -39,6 +40,8 @@ body {
     --secondary: #8e8e93;
     --sep: #38383a;
     --fill: #2c2c2e;
+    --accent: #ffffff;
+    --accent-text: #000000;
   }
 }
 
@@ -67,7 +70,7 @@ body {
   background: none;
   border: none;
   padding: 6px 0;
-  color: var(--blue);
+  color: var(--accent);
   cursor: pointer;
   min-height: 44px;
 }
@@ -189,7 +192,7 @@ body {
 .ios-chip:focus-visible,
 .ios-btn:focus-visible,
 .ios-link:focus-visible {
-  outline: 3px solid var(--blue);
+  outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -207,12 +210,13 @@ body {
   cursor: pointer;
   min-height: 50px;
 }
-.ios-btn.primary { background: var(--blue); }
+.ios-btn.primary { background: var(--accent); color: var(--accent-text); }
+.ios-sub { font-size: 13px; color: var(--secondary); margin-top: 2px; }
 .ios-btn.danger { background: var(--red); }
 .ios-btn:disabled { opacity: 0.45; cursor: default; }
 .ios-btn.ghost-btn {
   background: transparent;
-  color: var(--blue);
+  color: var(--accent);
 }
 
 /* Messages */
