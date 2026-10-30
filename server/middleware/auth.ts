@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'crypto';
 import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
 
@@ -106,4 +107,33 @@ export function verifySocketToken(socket: any, next: (err?: Error) => void) {
   } catch (err) {
     next(new Error('Invalid session.'));
   }
+}
+// Dedicated authentication for the laptop hardware gateway.
+export function requireGatewaySecret(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  const configuredSecret = process.env.GATEWAY_SECRET;
+  const providedSecret = req.get('x-gateway-secret') || '';
+
+  if (!configuredSecret || !providedSecret) {
+    return res.status(401).json({
+      error: 'Gateway authentication required.',
+    });
+  }
+
+  const expected = Buffer.from(configuredSecret, 'utf8');
+  const actual = Buffer.from(providedSecret, 'utf8');
+
+  if (
+    expected.length !== actual.length ||
+    !timingSafeEqual(expected, actual)
+  ) {
+    return res.status(401).json({
+      error: 'Invalid gateway credentials.',
+    });
+  }
+
+  next();
 }

@@ -20,8 +20,38 @@ export class SerialService extends EventEmitter {
   public lastError: string | null = null;
   public stats = { linesRead: 0, linesParsed: 0, linesDropped: 0, messagesWritten: 0 };
 
+  // Protocol autodetection & ASCII block parser state
+  public detectedProtocol: 'JSON' | 'SB1_ASCII' = 'SB1_ASCII';
+  private _asciiBlock: Record<string, string> = {};
+  private _currentBlockType: string = 'NONE';
+  private _pendingOutboxMap = new Map<number, { packet: any; sentAt: number }>();
+
   constructor() {
     super();
+  }
+
+  async listAvailablePorts() {
+    try {
+      let SerialPortModule: any;
+      try {
+        SerialPortModule = await import('serialport' as any);
+      } catch {
+        return [];
+      }
+      const SerialPort = SerialPortModule.SerialPort;
+      const ports = await SerialPort.list();
+      return ports.map((p: any) => ({
+        path: p.path,
+        manufacturer: p.manufacturer || 'Unknown',
+        friendlyName: p.friendlyName || p.path,
+        pnpId: p.pnpId,
+        vendorId: p.vendorId,
+        productId: p.productId,
+      }));
+    } catch (err: any) {
+      console.warn('[serial] listAvailablePorts notice:', err.message);
+      return [];
+    }
   }
 
   async connect(
@@ -40,7 +70,6 @@ export class SerialService extends EventEmitter {
     this.baudRate = baudRate;
 
     try {
-      // Dynamic import to avoid crash if optional serialport is not present
       let SerialPortModule: any;
       let readlineModule: any;
       try {
@@ -89,6 +118,9 @@ export class SerialService extends EventEmitter {
             this.emit('status', this.getStatus());
           });
 
+          // Team A is the gateway connected locally
+          this._touchDevice('A');
+
           this.emit('status', this.getStatus());
           this._logEvent('serial_connected', `Serial bridge connected on ${portPath}`);
           resolve({ connected: true, port: portPath });
@@ -131,6 +163,7 @@ export class SerialService extends EventEmitter {
       baudRate: this.baudRate || null,
       lastError: this.lastError,
       stats: { ...this.stats },
+      protocol: this.detectedProtocol,
     };
   }
 
@@ -139,61 +172,248 @@ export class SerialService extends EventEmitter {
     const line = rawLine.trim();
     if (!line) return;
 
-    let packet: any;
-    try {
-      packet = JSON.parse(line);
-    } catch {
-      this.stats.linesDropped += 1;
-      console.warn('[serial] dropped unparseable line:', line.slice(0, 120));
-      return;
-    }
+    // Any line received over serial from the local gateway confirms Team A hardware is alive
+    await this._touchDevice('A');
 
-    if (!this._isValidPacket(packet)) {
-      this.stats.linesDropped += 1;
-      console.warn('[serial] dropped invalid packet:', JSON.stringify(packet).slice(0, 120));
-      return;
-    }
-
-    this.stats.linesParsed += 1;
-    const correlationId = generateCorrelationId();
-
-    if (packet.type === 'MSG' || packet.type === 'ACK') {
-      logTrace(
-        correlationId,
-        'serial.in',
-        `msgID=${packet.msgID} from=${packet.from || '-'} to=${packet.to || '-'} bytes=${Buffer.byteLength(rawLine, 'utf8')}`
-      );
-      logTrace(
-        correlationId,
-        'validate.ok',
-        `payload=${packet.payload ? Buffer.byteLength(packet.payload, 'utf8') : 0}B type=${packet.type}`
-      );
-    }
-
-    try {
-      switch (packet.type) {
-        case 'HEARTBEAT':
-          return await this._handleHeartbeat(packet);
-        case 'ACK':
-          return await this._handleAck(packet, correlationId);
-        case 'STATUS':
-          return await this._handleStatus(packet);
-        case 'MSG':
-        case 'PING':
-          return await this._handleMessage(packet, correlationId);
-        default:
-          return;
+    // 1. JSON PROTOCOL SUPPORT
+    if (line.startsWith('{')) {
+      let packet: any;
+      try {
+        packet = JSON.parse(line);
+      } catch {
+        this.stats.linesDropped += 1;
+        console.warn('[serial] dropped unparseable line:', line.slice(0, 120));
+        return;
       }
-    } catch (err: any) {
-      console.error('[serial] failed handling packet:', err.message);
+
+      if (!this._isValidPacket(packet)) {
+        this.stats.linesDropped += 1;
+        console.warn('[serial] dropped invalid packet:', JSON.stringify(packet).slice(0, 120));
+        return;
+      }
+
+      this.detectedProtocol = 'JSON';
+      this.stats.linesParsed += 1;
+      const correlationId = generateCorrelationId();
+
+      if (packet.type === 'MSG' || packet.type === 'ACK') {
+        logTrace(
+          correlationId,
+          'serial.in',
+          `msgID=${packet.msgID} from=${packet.from || '-'} to=${packet.to || '-'} bytes=${Buffer.byteLength(rawLine, 'utf8')}`
+        );
+        logTrace(
+          correlationId,
+          'validate.ok',
+          `payload=${packet.payload ? Buffer.byteLength(packet.payload, 'utf8') : 0}B type=${packet.type}`
+        );
+      }
+
+      try {
+        switch (packet.type) {
+          case 'HEARTBEAT':
+            return await this._handleHeartbeat(packet);
+          case 'ACK':
+            return await this._handleAck(packet, correlationId);
+          case 'STATUS':
+            return await this._handleStatus(packet);
+          case 'MSG':
+          case 'PING':
+            return await this._handleMessage(packet, correlationId);
+          default:
+            return;
+        }
+      } catch (err: any) {
+        console.error('[serial] failed handling packet:', err.message);
+      }
+      return;
+    }
+
+    // 2. SB1 ASCII PROTOCOL SUPPORT (Standard SkyBridge ESP32 firmware)
+    await this._handleAsciiLine(line);
+  }
+
+  private async _handleAsciiLine(line: string) {
+    // Detect board identity and peer from boot banners
+    if (line.includes('SKYBRIDGE SYSTEM') || line.includes('SKYBRIDGE LORA') || line.includes('NODE_ONLINE')) {
+      this.detectedProtocol = 'SB1_ASCII';
+      await this._touchDevice('A');
+    }
+    if (line.includes('DRONE') || line.includes('REPEATER')) {
+      await this._touchDevice('DRONE');
+    }
+    if (line.startsWith('NODE:')) {
+      const node = line.replace('NODE:', '').trim();
+      if (node.includes('A')) await this._touchDevice('A');
+      if (node.includes('B')) await this._touchDevice('B');
+      if (node.includes('DRONE')) await this._touchDevice('DRONE');
+      return;
+    }
+    if (line.startsWith('CONNECTED PEER:')) {
+      const peer = line.replace('CONNECTED PEER:', '').trim();
+      if (peer.includes('A')) await this._touchDevice('A');
+      if (peer.includes('B')) await this._touchDevice('B');
+      if (peer.includes('DRONE')) await this._touchDevice('DRONE');
+      return;
+    }
+
+    // Block Headers
+    if (line.includes('MESSAGE RECEIVED')) {
+      this._currentBlockType = 'MESSAGE_RECEIVED';
+      this._asciiBlock = {};
+      return;
+    }
+    if (line.includes('ACK RECEIVED')) {
+      this._currentBlockType = 'ACK_RECEIVED';
+      this._asciiBlock = {};
+      return;
+    }
+    if (line.includes('MESSAGE TRANSMITTED')) {
+      this._currentBlockType = 'MESSAGE_TRANSMITTED';
+      this._asciiBlock = {};
+      return;
+    }
+
+    // Key-Value parsing
+    if (line.startsWith('FROM:')) {
+      this._asciiBlock.from = line.replace('FROM:', '').trim();
+      return;
+    }
+    if (line.startsWith('TO:')) {
+      this._asciiBlock.to = line.replace('TO:', '').trim();
+      return;
+    }
+    if (line.startsWith('PRIORITY:')) {
+      this._asciiBlock.priority = line.replace('PRIORITY:', '').trim();
+      return;
+    }
+    if (line.startsWith('MESSAGE ID:') || line.startsWith('PACKET ID:') || line.startsWith('ACK ID:')) {
+      const idStr = line.split(':')[1]?.trim() || '';
+      this._asciiBlock.packetID = idStr;
+      return;
+    }
+    if (line.startsWith('MESSAGE:')) {
+      this._asciiBlock.payload = line.replace('MESSAGE:', '').trim();
+      return;
+    }
+    if (line.startsWith('RSSI:')) {
+      this._asciiBlock.rssi = line.replace('RSSI:', '').trim();
+      return;
+    }
+    if (line.startsWith('SNR:')) {
+      this._asciiBlock.snr = line.replace('SNR:', '').trim();
+      return;
+    }
+    if (line.startsWith('STATUS:')) {
+      this._asciiBlock.status = line.replace('STATUS:', '').trim().toLowerCase();
+      return;
+    }
+
+    // Single-line signals
+    if (line.startsWith('ACK SENT')) {
+      await this._touchDevice('B');
+      return;
+    }
+
+    // Block Terminator / End of Frame
+    if (line.startsWith('===') || line.includes('WAITING FOR ACK') || line.includes('STATUS: DELIVERED')) {
+      if (this._currentBlockType === 'MESSAGE_RECEIVED' && this._asciiBlock.from && this._asciiBlock.payload) {
+        const rawFrom = this._asciiBlock.from.toUpperCase();
+        const from = rawFrom.endsWith('_A') || rawFrom === 'A' ? 'A' : 'B';
+        const rawTo = (this._asciiBlock.to || 'TEAM_A').toUpperCase();
+        const to = rawTo.endsWith('_B') || rawTo === 'B' ? 'B' : 'A';
+        const payload = this._asciiBlock.payload;
+        const prioRaw = (this._asciiBlock.priority || 'routine').toLowerCase();
+        const priority = prioRaw.includes('emerg') ? 'critical' : prioRaw.includes('urg') ? 'urgent' : 'routine';
+
+        let msgID = 0;
+        if (this._asciiBlock.packetID) {
+          const primaryId = this._asciiBlock.packetID.split('_')[0];
+          const num = parseInt(primaryId, 10);
+          if (!isNaN(num) && num > 0) {
+            msgID = num % 1000000000;
+          } else {
+            const digits = this._asciiBlock.packetID.replace(/\D/g, '');
+            msgID = Number(digits.slice(-6)) || Math.floor(1000 + Math.random() * 9000);
+          }
+        } else {
+          msgID = Math.floor(1000 + Math.random() * 9000);
+        }
+
+        const correlationId = generateCorrelationId();
+        this.stats.linesParsed += 1;
+        await this._handleMessage(
+          {
+            type: 'MSG',
+            from,
+            to,
+            payload,
+            priority,
+            msgID,
+            relayCount: 0,
+          },
+          correlationId
+        );
+
+        this._currentBlockType = 'NONE';
+        this._asciiBlock = {};
+        return;
+      }
+
+      if (this._currentBlockType === 'ACK_RECEIVED' || this._asciiBlock.status === 'delivered') {
+        const rawFrom = (this._asciiBlock.from || 'TEAM_B').toUpperCase();
+        const from = rawFrom.endsWith('_A') || rawFrom === 'A' ? 'A' : 'B';
+
+        let msgID = 0;
+        if (this._asciiBlock.packetID) {
+          const primaryId = this._asciiBlock.packetID.split('_')[0];
+          const num = parseInt(primaryId, 10);
+          if (!isNaN(num) && num > 0) {
+            msgID = num % 1000000000;
+          }
+        }
+        if (!msgID && this._pendingOutboxMap.size > 0) {
+          const keys = Array.from(this._pendingOutboxMap.keys());
+          msgID = keys[keys.length - 1];
+          this._pendingOutboxMap.delete(msgID);
+        }
+
+        if (msgID) {
+          const correlationId = generateCorrelationId();
+          this.stats.linesParsed += 1;
+          await this._handleAck(
+            {
+              type: 'ACK',
+              from,
+              msgID,
+            },
+            correlationId
+          );
+        }
+
+        this._currentBlockType = 'NONE';
+        this._asciiBlock = {};
+        return;
+      }
     }
   }
 
   private _isValidPacket(p: any) {
     if (!p || typeof p !== 'object') return false;
     if (!VALID_TYPES.includes(p.type)) return false;
+
+    // Normalize callsigns from firmware: "TEAM_A" -> "A", "TEAM_B" -> "B"
+    if (p.from) {
+      const fromStr = String(p.from).toUpperCase();
+      p.from = fromStr.endsWith('_A') || fromStr === 'A' ? 'A' : fromStr.endsWith('_B') || fromStr === 'B' ? 'B' : fromStr;
+    }
+    if (p.to) {
+      const toStr = String(p.to).toUpperCase();
+      p.to = toStr.endsWith('_A') || toStr === 'A' ? 'A' : toStr.endsWith('_B') || toStr === 'B' ? 'B' : toStr;
+    }
+
     if (p.from && !VALID_NODES.includes(p.from)) return false;
-    if (p.to && !VALID_NODES.includes(p.to)) return false;
+    if (p.to && !VALID_NODES.includes(p.to) && p.to !== 'BROADCAST') return false;
     if (p.type === 'MSG') {
       if (typeof p.msgID !== 'number') return false;
       if (typeof p.payload !== 'string' || p.payload.length === 0) return false;
@@ -279,15 +499,19 @@ export class SerialService extends EventEmitter {
 
   private async _touchDevice(deviceId: string, batteryVolts?: number) {
     if (!deviceId) return;
-    const update: any = { status: 'online', lastSeen: new Date() };
-    if (typeof batteryVolts === 'number') update.batteryVolts = batteryVolts;
+    try {
+      const update: any = { status: 'online', lastSeen: new Date() };
+      if (typeof batteryVolts === 'number') update.batteryVolts = batteryVolts;
 
-    const device = await Device.findOneAndUpdate(
-      { deviceId, isDemo: false },
-      { $set: update },
-      { new: true, upsert: true }
-    );
-    this.emit('device:online', device.toObject ? device.toObject() : device);
+      const device = await Device.findOneAndUpdate(
+        { deviceId, isDemo: false },
+        { $set: update },
+        { returnDocument: 'after', upsert: true }
+      );
+      this.emit('device:online', device.toObject ? device.toObject() : device);
+    } catch (err: any) {
+      console.warn(`[serial] error touching device ${deviceId}:`, err.message);
+    }
   }
 
   async send(packet: any) {
@@ -296,7 +520,22 @@ export class SerialService extends EventEmitter {
       err.code = 'SERIAL_DISCONNECTED';
       throw err;
     }
-    const line = JSON.stringify(packet) + '\n';
+
+    if (typeof packet.msgID === 'number') {
+      this._pendingOutboxMap.set(packet.msgID, { packet, sentAt: Date.now() });
+    }
+
+    let line = '';
+    if (this.detectedProtocol === 'JSON') {
+      line = JSON.stringify(packet) + '\n';
+    } else {
+      // SB1 ASCII format: SEND|<PRIORITY>|<RECEIVER>|<PAYLOAD>\n
+      const prioStr = String(packet.priority || 'routine').toUpperCase();
+      const prio = prioStr.includes('EMERG') || prioStr.includes('CRIT') ? 'EMERGENCY' : prioStr.includes('URG') ? 'URGENT' : 'NORMAL';
+      const receiver = packet.to === 'A' ? 'TEAM_A' : packet.to === 'B' ? 'TEAM_B' : packet.to;
+      line = `SEND|${prio}|${receiver}|${packet.payload}\n`;
+    }
+
     return new Promise((resolve, reject) => {
       this.port.write(line, (err: any) => {
         if (err) return reject(err);
@@ -319,12 +558,30 @@ export const serialService = new SerialService();
 export function startHeartbeatSweep(intervalMs: number = 5000) {
   const timeout = Number(process.env.HEARTBEAT_TIMEOUT_MS || 20000);
   return setInterval(async () => {
-    const cutoff = new Date(Date.now() - timeout);
-    const stale: any[] = await Device.find({ isDemo: false, status: 'online', lastSeen: { $lt: cutoff } });
-    for (const device of stale) {
-      device.status = 'offline';
-      await device.save();
-      serialService.emit('device:offline', device.toObject ? device.toObject() : device);
+    try {
+      // Keep Team A (connected host gateway) online as long as serial port is connected
+      if (serialService.connected) {
+        await Device.findOneAndUpdate(
+          { deviceId: 'A', isDemo: false },
+          { $set: { status: 'online', lastSeen: new Date() } },
+          { returnDocument: 'after', upsert: true }
+        );
+      }
+
+      const cutoff = new Date(Date.now() - timeout);
+      // Sweeps devices that are genuinely stale (excluding connected base station 'A')
+      const staleFilter: any = { isDemo: false, status: 'online', lastSeen: { $lt: cutoff } };
+      if (serialService.connected) {
+        staleFilter.deviceId = { $ne: 'A' };
+      }
+      const stale: any[] = await Device.find(staleFilter);
+      for (const device of stale) {
+        device.status = 'offline';
+        await device.save();
+        serialService.emit('device:offline', device.toObject ? device.toObject() : device);
+      }
+    } catch (err: any) {
+      console.warn('[heartbeat] sweep error:', err.message);
     }
   }, intervalMs);
 }

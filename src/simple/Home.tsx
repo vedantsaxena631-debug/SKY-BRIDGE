@@ -25,6 +25,9 @@ const PRIORITIES: { id: MessagePriority; label: string }[] = [
 const QUICK = ['Are you safe?', 'We need help.', 'We are safe.', 'We need supplies.'];
 
 const DEVICE_LABEL: Record<string, string> = {
+  online: 'Online',
+  standby: 'Standby',
+  offline: 'Offline',
   ONLINE: 'Online',
   STANDBY: 'Standby',
   OFFLINE: 'Offline',
@@ -32,6 +35,12 @@ const DEVICE_LABEL: Record<string, string> = {
 
 // Plain words for every status the system can report
 const STATUS_LABEL: Record<string, string> = {
+  queued: 'Sending',
+  sent_to_bridge: 'Sending',
+  relayed: 'Relayed',
+  delivered: 'Delivered',
+  acknowledged: 'Delivered',
+  failed: 'Failed',
   QUEUED: 'Sending',
   SENT_TO_BRIDGE: 'Sending',
   RELAYED: 'Relayed',
@@ -188,7 +197,7 @@ export function Home() {
                   {NAMES[m.from]} to {NAMES[m.to]}
                 </strong>
                 <span className="ios-time">
-                  {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {m.timestamp}
                 </span>
               </div>
               <p>{m.payload}</p>
@@ -205,3 +214,5 @@ export function Home() {
 }
 
 export default Home;
+
+

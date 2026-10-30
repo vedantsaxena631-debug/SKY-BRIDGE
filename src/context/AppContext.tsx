@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { io } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import { api } from '../services/api';
 import {
@@ -23,6 +24,47 @@ import {
 } from '../data/initialData';
 import { demoSimulator } from '../services/demoSimulator';
 import { audioAlert } from '../utils/audioAlert';
+
+function mapDocToMessage(doc: any): Message {
+  const from: NodeId = doc.from === 'A' ? 'TEAM_A' : doc.from === 'B' ? 'TEAM_B' : (doc.from || 'TEAM_A');
+  const to: NodeId = doc.to === 'A' ? 'TEAM_A' : doc.to === 'B' ? 'TEAM_B' : (doc.to || 'TEAM_B');
+  const rawStatus = (doc.status || 'queued').toLowerCase();
+  let status: any = 'QUEUED';
+  if (rawStatus === 'delivered') status = 'DELIVERED';
+  else if (rawStatus === 'relayed') status = 'RELAYED';
+  else if (rawStatus === 'sent_to_bridge') status = 'TRANSMITTING';
+  else if (rawStatus === 'failed') status = 'FAILED';
+
+  const rawPrio = (doc.priority || 'routine').toLowerCase();
+  const priority: MessagePriority =
+    rawPrio.includes('crit') || rawPrio.includes('emerg')
+      ? 'CRITICAL'
+      : rawPrio.includes('urg')
+      ? 'URGENT'
+      : 'ROUTINE';
+
+  return {
+    id: String(doc._id || doc.id || `msg_${doc.msgID}`),
+    msgID: doc.msgID,
+    from,
+    to,
+    payload: doc.payload || '',
+    priority,
+    status,
+    timestamp: new Date(doc.timestamp || Date.now()).toLocaleTimeString(),
+    relayCount: doc.relayCount ?? 0,
+    ackReceivedAt: doc.ackReceivedAt ? new Date(doc.ackReceivedAt).toLocaleTimeString() : undefined,
+    isDemo: Boolean(doc.isDemo),
+    isTestPing: doc.type === 'PING',
+    hops: [
+      {
+        node: from,
+        action: status === 'DELIVERED' ? 'Delivered with Verified LoRa ACK' : 'Message Transmitted / Relayed',
+        timestamp: new Date(doc.timestamp || Date.now()).toLocaleTimeString(),
+      },
+    ],
+  };
+}
 
 interface AppContextType {
   mode: 'DEMO' | 'LIVE';
@@ -132,25 +174,186 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setDevices(INITIAL_DEVICES.map((d) => ({ ...d, status: 'offline', linkQuality: 0 })));
       setSerialBridge({
         connected: false,
-        port: '/dev/ttyUSB0',
+        port: 'COM8',
         baudRate: 115200,
-        statusMessage: 'Live mode active. Physical hardware disconnected. An empty live feed is the expected state until hardware connects.',
+        statusMessage: 'Connecting to physical LoRa serial gateway...',
         reconnectAttempts: 0,
         isSimulated: false,
       });
+
+      if (auth.token) {
+        api.get('/messages').then((msgs: any) => {
+          if (Array.isArray(msgs)) setMessages(msgs.map(mapDocToMessage));
+        }).catch(() => {});
+
+        api.get('/status').then((st: any) => {
+          if (st?.nodes) {
+            setDevices((prev) => prev.map((d) => {
+              const k = d.id === 'TEAM_A' ? 'A' : d.id === 'TEAM_B' ? 'B' : 'DRONE';
+              const nodeInfo = st.nodes[k];
+              if (nodeInfo && nodeInfo.status === 'online') {
+                return { ...d, status: 'online', lastSeen: 'Just now' };
+              }
+              return d;
+            }));
+          }
+        }).catch(() => {});
+
+        api.get('/serial/status').then((s: any) => {
+          if (s) {
+            setSerialBridge((prev) => ({
+              ...prev,
+              connected: Boolean(s.connected),
+              port: s.port || prev.port || 'COM8',
+              baudRate: s.baudRate || prev.baudRate,
+              statusMessage: s.connected
+                ? `Connected to ESP32 LoRa Gateway on ${s.port} @ ${s.baudRate} baud.`
+                : 'Physical hardware disconnected.',
+              isSimulated: false,
+            }));
+          }
+        }).catch(() => {});
+      }
     } else {
       setMessages(INITIAL_MESSAGES);
       setDevices(INITIAL_DEVICES);
       setSerialBridge({
         connected: false,
-        port: '/dev/ttyUSB0',
+        port: 'COM8',
         baudRate: 115200,
         statusMessage: 'Demo simulation bridge active. Telemetry generated in-memory.',
         reconnectAttempts: 0,
         isSimulated: true,
       });
     }
-  }, [auth.mode, auth.user?.username]);
+  }, [auth.mode, auth.token, auth.user?.username]);
+
+  // Real-time Socket.IO Connection for Hardware / Live Telemetry
+  useEffect(() => {
+    const isLive = auth.mode === 'live';
+    const namespace = isLive ? '/live' : '/demo';
+    const token = auth.token;
+
+    if (!token && isLive) return;
+
+    const socketUrl = window.location.origin;
+    const socket = io(`${socketUrl}${namespace}`, {
+      auth: { token },
+      transports: ['websocket', 'polling'],
+    });
+
+    socket.on('serial:status', (s: any) => {
+      setSerialBridge((prev) => ({
+        ...prev,
+        connected: Boolean(s?.connected),
+        port: s?.port || prev.port || 'COM8',
+        baudRate: s?.baudRate || prev.baudRate,
+        statusMessage: s?.connected
+          ? `Connected to ESP32 LoRa Gateway on ${s.port} @ ${s.baudRate} baud.`
+          : s?.lastError || 'Physical hardware disconnected.',
+        isSimulated: !isLive,
+      }));
+    });
+
+    socket.on('message:received', (doc: any) => {
+      const msg = mapDocToMessage(doc);
+      setMessages((prev) => [msg, ...prev.filter((m) => m.msgID !== msg.msgID)]);
+      if (soundEnabled) {
+        if (msg.priority === 'CRITICAL') {
+          audioAlert.playCriticalAlert();
+        } else {
+          audioAlert.playAckPing();
+        }
+      }
+    });
+
+    socket.on('message:delivered', (doc: any) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.msgID === doc.msgID
+            ? {
+                ...m,
+                status: 'DELIVERED',
+                ackReceivedAt: new Date(doc.ackReceivedAt || Date.now()).toLocaleTimeString(),
+                hops: [
+                  ...m.hops,
+                  {
+                    node: m.to,
+                    action: 'ACK Confirmed by Physical SX1278 Transceiver',
+                    timestamp: new Date().toLocaleTimeString(),
+                  },
+                ],
+              }
+            : m
+        )
+      );
+      if (soundEnabled) {
+        audioAlert.playAckPing();
+      }
+    });
+
+    socket.on('message:relayed', (doc: any) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.msgID === doc.msgID
+            ? {
+                ...m,
+                status: 'RELAYED',
+                relayCount: doc.relayCount ?? (m.relayCount + 1),
+              }
+            : m
+        )
+      );
+    });
+
+    socket.on('message:failed', (doc: any) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.msgID === doc.msgID
+            ? {
+                ...m,
+                status: 'FAILED',
+                hops: [
+                  ...m.hops,
+                  {
+                    node: m.from,
+                    action: `Transmission Failed: ${doc.failureReason || 'No ACK received'}`,
+                    timestamp: new Date().toLocaleTimeString(),
+                  },
+                ],
+              }
+            : m
+        )
+      );
+    });
+
+    socket.on('device:online', (dev: any) => {
+      const devId: NodeId = dev.deviceId === 'A' ? 'TEAM_A' : dev.deviceId === 'B' ? 'TEAM_B' : 'DRONE_RELAY';
+      setDevices((prev) =>
+        prev.map((d) =>
+          d.id === devId
+            ? {
+                ...d,
+                status: 'online',
+                lastSeen: 'Just now',
+                battery: dev.batteryVolts ? `${dev.batteryVolts.toFixed(1)}V` : d.battery,
+              }
+            : d
+        )
+      );
+    });
+
+    socket.on('device:offline', (dev: any) => {
+      const devId: NodeId = dev.deviceId === 'A' ? 'TEAM_A' : dev.deviceId === 'B' ? 'TEAM_B' : 'DRONE_RELAY';
+      setDevices((prev) =>
+        prev.map((d) => (d.id === devId ? { ...d, status: 'offline' } : d))
+      );
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [auth.mode, auth.token, soundEnabled]);
 
   // New Design System Modes
   const [kioskMode, setKioskMode] = useState<boolean>(false);
@@ -262,16 +465,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     auth.switchModeViaLogout(targetMode);
   };
 
-  const connectSerial = (port = '/dev/ttyUSB0', baud = 115200) => {
-    setSerialBridge({
-      connected: true,
-      port,
-      baudRate: baud,
-      statusMessage: `Connected to ESP32 LoRa Gateway on ${port} @ ${baud} baud.`,
-      lastPacketTime: new Date().toLocaleTimeString(),
-      reconnectAttempts: 0,
-      isSimulated: mode === 'DEMO',
-    });
+  const connectSerial = async (port = 'COM8', baud = 115200) => {
+    try {
+      const res = await api.post('/serial/connect', { port, baudRate: baud });
+      if (res?.status) {
+        setSerialBridge({
+          connected: Boolean(res.status.connected),
+          port: res.status.port || port,
+          baudRate: res.status.baudRate || baud,
+          statusMessage: `Connected to ESP32 LoRa Gateway on ${res.status.port || port} @ ${res.status.baudRate || baud} baud.`,
+          lastPacketTime: new Date().toLocaleTimeString(),
+          reconnectAttempts: 0,
+          isSimulated: mode === 'DEMO',
+        });
+      }
+    } catch (err: any) {
+      console.warn('[serial] connect API error:', err.message);
+      setSerialBridge((prev) => ({
+        ...prev,
+        connected: false,
+        statusMessage: `Could not connect to ${port}: ${err.message}`,
+      }));
+    }
 
     const newAudit: AuditLogEntry = {
       id: `aud_${Date.now()}`,
@@ -285,7 +500,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAuditLogs((prev) => [newAudit, ...prev]);
   };
 
-  const disconnectSerial = () => {
+  const disconnectSerial = async () => {
+    try {
+      await api.post('/serial/disconnect');
+    } catch (err: any) {
+      console.warn('[serial] disconnect API error:', err.message);
+    }
+
     setSerialBridge((prev) => ({
       ...prev,
       connected: false,
@@ -547,3 +768,4 @@ export const useApp = () => {
   }
   return context;
 };
+

@@ -13,6 +13,9 @@ export interface IMessage {
   relayCount: number;
   isDemo: boolean;
   failureReason?: string;
+  claimedBy?: string;
+  leaseUntil?: Date | null;
+  dispatchAttempts?: number;
   ackReceivedAt?: Date | null;
   timestamp: Date;
   createdAt: Date;
@@ -34,7 +37,7 @@ export const MessageSchema = new Schema<IMessageDoc>(
     to: { type: String, required: true, enum: ['A', 'B', 'DRONE'] },
     payload: { type: String, required: true, maxlength: 200 },
     type: { type: String, default: 'MSG', enum: ['MSG', 'ACK', 'HEARTBEAT', 'PING', 'STATUS'] },
-    priority: { type: String, default: 'routine', enum: ['routine', 'urgent', 'emergency'] },
+    priority: { type: String, default: 'routine', enum: ['routine', 'urgent', 'emergency', 'critical', 'ROUTINE', 'URGENT', 'CRITICAL', 'EMERGENCY'] },
     status: {
       type: String,
       default: 'queued',
@@ -44,6 +47,9 @@ export const MessageSchema = new Schema<IMessageDoc>(
     relayCount: { type: Number, default: 0 },
     isDemo: { type: Boolean, required: true, index: true },
     failureReason: { type: String },
+    claimedBy: { type: String },
+    leaseUntil: { type: Date, default: null },
+    dispatchAttempts: { type: Number, default: 0 },
     ackReceivedAt: { type: Date, default: null },
     timestamp: { type: Date, default: Date.now },
   },
@@ -54,6 +60,7 @@ export const MessageSchema = new Schema<IMessageDoc>(
 MessageSchema.index({ msgID: 1, isDemo: 1 });
 MessageSchema.index({ timestamp: -1 });
 MessageSchema.index({ status: 1, isDemo: 1 });
+MessageSchema.index({ isDemo: 1, status: 1, leaseUntil: 1, timestamp: 1 });
 
 const MongoMessageModel = mongoose.models.Message || mongoose.model<IMessageDoc>('Message', MessageSchema);
 
@@ -105,6 +112,65 @@ class MemoryMessageStore {
     ];
   }
 
+  async claimNextQueued(gatewayId: string, leaseMs = 30000): Promise<any | null> {
+    const now = new Date();
+    const leaseUntil = new Date(now.getTime() + leaseMs);
+
+    // MongoDB: atomic claim prevents two gateways claiming the same message.
+    if (mongoose.connection.readyState === 1) {
+      return (MongoMessageModel as any).findOneAndUpdate(
+        {
+          isDemo: false,
+          status: 'queued',
+          $or: [
+            { leaseUntil: null },
+            { leaseUntil: { $exists: false } },
+            { leaseUntil: { $lte: now } },
+          ],
+        },
+        {
+          $set: {
+            claimedBy: gatewayId,
+            leaseUntil,
+          },
+          $inc: {
+            dispatchAttempts: 1,
+          },
+        },
+        {
+          new: true,
+          sort: { timestamp: 1 },
+        }
+      ).lean().exec();
+    }
+
+    // In-memory fallback: synchronous selection and update.
+    const index = this.messages.findIndex((message) => {
+      if (message.isDemo !== false || message.status !== 'queued') {
+        return false;
+      }
+
+      return (
+        !message.leaseUntil ||
+        new Date(message.leaseUntil).getTime() <= now.getTime()
+      );
+    });
+
+    if (index === -1) return null;
+
+    const message = this.messages[index];
+
+    const claimed = {
+      ...message,
+      claimedBy: gatewayId,
+      leaseUntil,
+      dispatchAttempts: (message.dispatchAttempts || 0) + 1,
+      updatedAt: now,
+    };
+
+    this.messages[index] = claimed;
+    return { ...claimed };
+  }
   async countDocuments(filter: any = {}): Promise<number> {
     if (mongoose.connection.readyState === 1) {
       return MongoMessageModel.countDocuments(filter);
