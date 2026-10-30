@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
+import { api } from '../../services/api';
 import {
   Settings,
   Sun,
@@ -34,8 +35,22 @@ export const SettingsView: React.FC = () => {
     disconnectSerial,
   } = useApp();
 
-  const [customPort, setCustomPort] = useState(serialBridge.port);
-  const [baudRate, setBaudRate] = useState(serialBridge.baudRate);
+  const [customPort, setCustomPort] = useState(serialBridge.port || 'COM8');
+  const [baudRate, setBaudRate] = useState(serialBridge.baudRate || 115200);
+  const [availablePorts, setAvailablePorts] = useState<any[]>([]);
+
+  useEffect(() => {
+    api.get('/serial/ports')
+      .then((data: any) => {
+        if (data?.ports && Array.isArray(data.ports)) {
+          setAvailablePorts(data.ports);
+          if (data.activePort) {
+            setCustomPort(data.activePort);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleSerialToggle = () => {
     if (serialBridge.connected) {
@@ -178,6 +193,37 @@ export const SettingsView: React.FC = () => {
             {serialBridge.connected ? 'SERIAL CONNECTED' : 'DEMO EMULATION'}
           </span>
         </div>
+
+        {availablePorts.length > 0 && (
+          <div className="space-y-2">
+            <label className="text-[11px] font-mono font-semibold text-slate-300">
+              Detected Hardware Ports (Click to select)
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {availablePorts.map((p) => {
+                const isSelected = customPort.toUpperCase() === p.path.toUpperCase();
+                return (
+                  <button
+                    key={p.path}
+                    type="button"
+                    onClick={() => setCustomPort(p.path)}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-mono transition-all flex items-center gap-2 ${
+                      isSelected
+                        ? 'bg-cyan-950/80 border-cyan-500 text-cyan-300 font-bold'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <Radio className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>{p.path}</span>
+                    <span className="text-[10px] text-slate-500 font-normal">
+                      {p.friendlyName.includes('Silicon') ? 'ESP32 Bridge' : p.manufacturer}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
           <div>

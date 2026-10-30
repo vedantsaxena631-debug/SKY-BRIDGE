@@ -1,0 +1,30 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "SkyBridge: Full-Stack Dev Server (Node + Vite)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "restart": true,
+      "env": {
+        "NODE_ENV": "development",
+        "PORT": "3000",
+        "SERIAL_PORT": "COM8",
+        "SERIAL_BAUD_RATE": "115200"
+      }
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "SkyBridge: Test LoRa Hardware Link (COM8 <-> COM14)",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "scripts/testHardwareLink.ts"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    }
+  ]
+}

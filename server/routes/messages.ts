@@ -2,6 +2,7 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth, requireRole, scopeToSessionMode, enforceSenderIdentity } from '../middleware/auth';
 import { Message } from '../models/Message';
+import { serialService } from '../services/serialService';
 import { generateCorrelationId, logTrace } from '../utils/trace';
 
 const router = Router();
@@ -90,11 +91,25 @@ router.post(
       `msgID=${msgID} payload=${payloadBytes}B type=${type || 'MSG'}`
     );
 
-    // Live messages wait for the authenticated laptop gateway.
-    // Demo messages continue through the existing simulator flow.
-    const status = isDemo ? 'sent_to_bridge' : 'queued';
+    // Live messages send to hardware bridge if connected, otherwise queue for remote gateway
+    let status = isDemo ? 'sent_to_bridge' : 'queued';
 
-    if (!isDemo) {
+    if (!isDemo && serialService.connected) {
+      try {
+        await serialService.send({
+          from,
+          to,
+          msgID,
+          payload,
+          priority: priority || 'routine',
+          type: type || 'MSG',
+        });
+        status = 'sent_to_bridge';
+        logTrace(correlationId, 'serial.out', `msgID=${msgID} dispatched to serial bridge`);
+      } catch (err: any) {
+        console.warn('[messages] serial send error:', err.message);
+      }
+    } else if (!isDemo) {
       logTrace(
         correlationId,
         'gateway.queue',

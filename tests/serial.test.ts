@@ -94,4 +94,54 @@ export async function runSerialParsingTests(): Promise<void> {
       throw new Error(`Message was not marked delivered upon ACK arrival: ${JSON.stringify(deliveredDoc)}`);
     }
   }
+
+  // Test 5: Ingests physical ESP32 SB1 ASCII multi-line protocol blocks
+  {
+    const asciiLines = [
+      '==============================',
+      'MESSAGE RECEIVED',
+      '==============================',
+      'FROM: TEAM_B',
+      'TO: TEAM_A',
+      'PRIORITY: NORMAL',
+      'MESSAGE ID: 8801_1',
+      'MESSAGE: GROUND SEARCH REPORT',
+      'RSSI: -45',
+      'SNR: 9.00',
+      '==============================',
+    ];
+
+    for (const l of asciiLines) {
+      await (serialService as any)._handleLine(l);
+    }
+
+    const doc = await Message.findOne({ msgID: 8801, isDemo: false });
+    if (doc && doc.payload === 'GROUND SEARCH REPORT' && doc.from === 'B' && doc.to === 'A') {
+      console.log('    ✓ ingests and stores physical ESP32 SB1 ASCII telemetry frame');
+    } else {
+      throw new Error(`Failed to parse SB1 ASCII message: ${JSON.stringify(doc)}`);
+    }
+
+    // Now feed ACK frame
+    const ackLines = [
+      '==============================',
+      'ACK RECEIVED',
+      '==============================',
+      'FROM: TEAM_B',
+      'PACKET ID: 8801_1',
+      'STATUS: DELIVERED',
+      '==============================',
+    ];
+
+    for (const l of ackLines) {
+      await (serialService as any)._handleLine(l);
+    }
+
+    const ackedDoc = await Message.findOne({ msgID: 8801, isDemo: false });
+    if (ackedDoc && ackedDoc.status === 'delivered' && ackedDoc.ackReceivedAt) {
+      console.log('    ✓ marks message delivered when physical SB1 ASCII ACK frame arrives');
+    } else {
+      throw new Error(`Failed to deliver on SB1 ASCII ACK: ${JSON.stringify(ackedDoc)}`);
+    }
+  }
 }

@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import http from 'http';
 import path from 'path';
@@ -9,6 +10,7 @@ import authRoutes from './server/routes/auth';
 import statusRoutes from './server/routes/status';
 import messageRoutes from './server/routes/messages';
 import gatewayRoutes from './server/routes/gateway';
+import serialRoutes from './server/routes/serial';
 
 import { attachSockets } from './server/sockets';
 import {
@@ -100,6 +102,7 @@ async function startServer() {
   app.use('/api/v1', statusRoutes);
   app.use('/api/v1/messages', messageRoutes);
   app.use('/api/v1/gateway', gatewayRoutes);
+  app.use('/api/v1/serial', serialRoutes);
 
   // General Health Route
   app.get('/api/health', (_req, res) => {
