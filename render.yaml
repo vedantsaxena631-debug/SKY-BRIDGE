@@ -3,10 +3,29 @@ services:
     name: skybridge
     runtime: node
     plan: free
-    buildCommand: npm install && npm run build
+    # --include=dev is required: vite and tailwind are devDependencies, and
+    # NODE_ENV=production would otherwise skip them and the build would fail.
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 3000
+      - key: ALLOW_GUEST_DEMO
+        value: "true"
+      # Set these in the Render dashboard (secrets, never committed):
+      - key: JWT_SECRET
+        sync: false
+      - key: CLIENT_ORIGIN
+        sync: false        # your https://<name>.onrender.com address
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+      - key: SEED_OPERATOR_A_PASSWORD
+        sync: false
+      - key: SEED_OPERATOR_B_PASSWORD
+        sync: false
+      - key: SEED_VIEWER_PASSWORD
+        sync: false
+      - key: MONGODB_URI
+        sync: false        # optional; without it data resets on every restart
