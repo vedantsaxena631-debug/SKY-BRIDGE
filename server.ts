@@ -1,3 +1,18 @@
+import fs from 'fs';
+
+// Guard against EPERM when traversing upwards into user directory for package.json
+const originalReadFileSync = fs.readFileSync;
+fs.readFileSync = function (path: any, ...args: any[]) {
+  try {
+    return (originalReadFileSync as any).apply(this, [path, ...args]);
+  } catch (err: any) {
+    if (err && (err.code === 'EPERM' || err.code === 'EACCES')) {
+      return '{}';
+    }
+    throw err;
+  }
+} as any;
+
 import 'dotenv/config';
 import express from 'express';
 import http from 'http';

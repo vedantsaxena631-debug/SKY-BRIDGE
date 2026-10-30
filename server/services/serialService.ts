@@ -172,6 +172,9 @@ export class SerialService extends EventEmitter {
     const line = rawLine.trim();
     if (!line) return;
 
+    // Any line received over serial from the local gateway confirms Team A hardware is alive
+    await this._touchDevice('A');
+
     // 1. JSON PROTOCOL SUPPORT
     if (line.startsWith('{')) {
       let packet: any;
@@ -232,19 +235,25 @@ export class SerialService extends EventEmitter {
 
   private async _handleAsciiLine(line: string) {
     // Detect board identity and peer from boot banners
-    if (line.includes('SKYBRIDGE SYSTEM')) {
+    if (line.includes('SKYBRIDGE SYSTEM') || line.includes('SKYBRIDGE LORA') || line.includes('NODE_ONLINE')) {
       this.detectedProtocol = 'SB1_ASCII';
+      await this._touchDevice('A');
+    }
+    if (line.includes('DRONE') || line.includes('REPEATER')) {
+      await this._touchDevice('DRONE');
     }
     if (line.startsWith('NODE:')) {
       const node = line.replace('NODE:', '').trim();
       if (node.includes('A')) await this._touchDevice('A');
       if (node.includes('B')) await this._touchDevice('B');
+      if (node.includes('DRONE')) await this._touchDevice('DRONE');
       return;
     }
     if (line.startsWith('CONNECTED PEER:')) {
       const peer = line.replace('CONNECTED PEER:', '').trim();
       if (peer.includes('A')) await this._touchDevice('A');
       if (peer.includes('B')) await this._touchDevice('B');
+      if (peer.includes('DRONE')) await this._touchDevice('DRONE');
       return;
     }
 
@@ -392,8 +401,19 @@ export class SerialService extends EventEmitter {
   private _isValidPacket(p: any) {
     if (!p || typeof p !== 'object') return false;
     if (!VALID_TYPES.includes(p.type)) return false;
+
+    // Normalize callsigns from firmware: "TEAM_A" -> "A", "TEAM_B" -> "B"
+    if (p.from) {
+      const fromStr = String(p.from).toUpperCase();
+      p.from = fromStr.endsWith('_A') || fromStr === 'A' ? 'A' : fromStr.endsWith('_B') || fromStr === 'B' ? 'B' : fromStr;
+    }
+    if (p.to) {
+      const toStr = String(p.to).toUpperCase();
+      p.to = toStr.endsWith('_A') || toStr === 'A' ? 'A' : toStr.endsWith('_B') || toStr === 'B' ? 'B' : toStr;
+    }
+
     if (p.from && !VALID_NODES.includes(p.from)) return false;
-    if (p.to && !VALID_NODES.includes(p.to)) return false;
+    if (p.to && !VALID_NODES.includes(p.to) && p.to !== 'BROADCAST') return false;
     if (p.type === 'MSG') {
       if (typeof p.msgID !== 'number') return false;
       if (typeof p.payload !== 'string' || p.payload.length === 0) return false;
@@ -479,15 +499,19 @@ export class SerialService extends EventEmitter {
 
   private async _touchDevice(deviceId: string, batteryVolts?: number) {
     if (!deviceId) return;
-    const update: any = { status: 'online', lastSeen: new Date() };
-    if (typeof batteryVolts === 'number') update.batteryVolts = batteryVolts;
+    try {
+      const update: any = { status: 'online', lastSeen: new Date() };
+      if (typeof batteryVolts === 'number') update.batteryVolts = batteryVolts;
 
-    const device = await Device.findOneAndUpdate(
-      { deviceId, isDemo: false },
-      { $set: update },
-      { new: true, upsert: true }
-    );
-    this.emit('device:online', device.toObject ? device.toObject() : device);
+      const device = await Device.findOneAndUpdate(
+        { deviceId, isDemo: false },
+        { $set: update },
+        { returnDocument: 'after', upsert: true }
+      );
+      this.emit('device:online', device.toObject ? device.toObject() : device);
+    } catch (err: any) {
+      console.warn(`[serial] error touching device ${deviceId}:`, err.message);
+    }
   }
 
   async send(packet: any) {
@@ -534,12 +558,30 @@ export const serialService = new SerialService();
 export function startHeartbeatSweep(intervalMs: number = 5000) {
   const timeout = Number(process.env.HEARTBEAT_TIMEOUT_MS || 20000);
   return setInterval(async () => {
-    const cutoff = new Date(Date.now() - timeout);
-    const stale: any[] = await Device.find({ isDemo: false, status: 'online', lastSeen: { $lt: cutoff } });
-    for (const device of stale) {
-      device.status = 'offline';
-      await device.save();
-      serialService.emit('device:offline', device.toObject ? device.toObject() : device);
+    try {
+      // Keep Team A (connected host gateway) online as long as serial port is connected
+      if (serialService.connected) {
+        await Device.findOneAndUpdate(
+          { deviceId: 'A', isDemo: false },
+          { $set: { status: 'online', lastSeen: new Date() } },
+          { returnDocument: 'after', upsert: true }
+        );
+      }
+
+      const cutoff = new Date(Date.now() - timeout);
+      // Sweeps devices that are genuinely stale (excluding connected base station 'A')
+      const staleFilter: any = { isDemo: false, status: 'online', lastSeen: { $lt: cutoff } };
+      if (serialService.connected) {
+        staleFilter.deviceId = { $ne: 'A' };
+      }
+      const stale: any[] = await Device.find(staleFilter);
+      for (const device of stale) {
+        device.status = 'offline';
+        await device.save();
+        serialService.emit('device:offline', device.toObject ? device.toObject() : device);
+      }
+    } catch (err: any) {
+      console.warn('[heartbeat] sweep error:', err.message);
     }
   }, intervalMs);
 }

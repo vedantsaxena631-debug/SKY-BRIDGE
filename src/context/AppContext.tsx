@@ -186,6 +186,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (Array.isArray(msgs)) setMessages(msgs.map(mapDocToMessage));
         }).catch(() => {});
 
+        api.get('/status').then((st: any) => {
+          if (st?.nodes) {
+            setDevices((prev) => prev.map((d) => {
+              const k = d.id === 'TEAM_A' ? 'A' : d.id === 'TEAM_B' ? 'B' : 'DRONE';
+              const nodeInfo = st.nodes[k];
+              if (nodeInfo && nodeInfo.status === 'online') {
+                return { ...d, status: 'online', lastSeen: 'Just now' };
+              }
+              return d;
+            }));
+          }
+        }).catch(() => {});
+
         api.get('/serial/status').then((s: any) => {
           if (s) {
             setSerialBridge((prev) => ({
@@ -755,3 +768,4 @@ export const useApp = () => {
   }
   return context;
 };
+
