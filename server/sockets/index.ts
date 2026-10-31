@@ -1,6 +1,24 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { verifySocketToken } from '../middleware/auth';
 import { serialService } from '../services/serialService';
+import { Device } from '../models/Device';
+
+// What every live dashboard needs on connect. A node counts as online only if it was heard from recently,
+// so a stale "online" left in the database after a restart is never shown.
+async function liveDeviceSnapshot() {
+  const timeout = Number(process.env.HEARTBEAT_TIMEOUT_MS || 20000);
+  const rows: any[] = await Device.find({ isDemo: false });
+  return rows.map((d) => {
+    const o = d.toObject ? d.toObject() : d;
+    const fresh = o.lastSeen && Date.now() - new Date(o.lastSeen).getTime() < timeout;
+    return {
+      deviceId: o.deviceId,
+      status: o.status === 'online' && fresh ? 'online' : 'offline',
+      lastSeen: o.lastSeen,
+      batteryVolts: o.batteryVolts,
+    };
+  });
+}
 
 export function attachSockets(io: SocketIOServer, { demoSimulator }: { demoSimulator?: any } = {}) {
   const live = io.of('/live');
@@ -24,9 +42,14 @@ export function attachSockets(io: SocketIOServer, { demoSimulator }: { demoSimul
     next();
   });
 
-  live.on('connection', (socket: any) => {
+  live.on('connection', async (socket: any) => {
     console.log(`[socket/live] ${socket.user.username} connected`);
     socket.emit('serial:status', serialService.getStatus());
+    try {
+      socket.emit('devices:snapshot', await liveDeviceSnapshot());
+    } catch (err: any) {
+      console.warn('[socket/live] could not send device snapshot:', err.message);
+    }
     socket.on('disconnect', () => console.log(`[socket/live] ${socket.user.username} disconnected`));
   });
 

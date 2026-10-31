@@ -7,6 +7,17 @@ import { generateCorrelationId, logTrace } from '../utils/trace';
 const VALID_NODES = ['A', 'B', 'DRONE'];
 const VALID_TYPES = ['MSG', 'ACK', 'HEARTBEAT', 'PING', 'STATUS'];
 
+/**
+ * Maps a callsign such as "TEAM_A", "A", "Node B" or "DRONE RELAY" to A, B or DRONE.
+ * Matches whole tokens only, so "TEAM_B" can never be mistaken for Team A.
+ */
+export function nodeFromName(raw: unknown): 'A' | 'B' | 'DRONE' | null {
+  const tokens = String(raw ?? '').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  if (tokens.some((t) => t === 'DRONE' || t === 'RELAY' || t === 'REPEATER')) return 'DRONE';
+  const last = tokens[tokens.length - 1];
+  return last === 'A' || last === 'B' ? last : null;
+}
+
 export class SerialService extends EventEmitter {
   public port: any = null;
   public parser: any = null;
@@ -234,26 +245,19 @@ export class SerialService extends EventEmitter {
   }
 
   private async _handleAsciiLine(line: string) {
-    // Detect board identity and peer from boot banners
+    // Detect board identity and peer from boot banners and status lines.
+    // Callsigns are matched as whole tokens: "TEAM_B" must never count as Team A.
+    const isPayloadLine = /^(MESSAGE|FROM|TO|PRIORITY|MESSAGE ID|PACKET ID|ACK ID|RSSI|STATUS)\b/.test(line);
     if (line.includes('SKYBRIDGE SYSTEM') || line.includes('SKYBRIDGE LORA') || line.includes('NODE_ONLINE')) {
       this.detectedProtocol = 'SB1_ASCII';
       await this._touchDevice('A');
     }
-    if (line.includes('DRONE') || line.includes('REPEATER')) {
+    if (!isPayloadLine && /\b(DRONE|REPEATER)\b/.test(line)) {
       await this._touchDevice('DRONE');
     }
-    if (line.startsWith('NODE:')) {
-      const node = line.replace('NODE:', '').trim();
-      if (node.includes('A')) await this._touchDevice('A');
-      if (node.includes('B')) await this._touchDevice('B');
-      if (node.includes('DRONE')) await this._touchDevice('DRONE');
-      return;
-    }
-    if (line.startsWith('CONNECTED PEER:')) {
-      const peer = line.replace('CONNECTED PEER:', '').trim();
-      if (peer.includes('A')) await this._touchDevice('A');
-      if (peer.includes('B')) await this._touchDevice('B');
-      if (peer.includes('DRONE')) await this._touchDevice('DRONE');
+    if (line.startsWith('NODE:') || line.startsWith('CONNECTED PEER:')) {
+      const node = nodeFromName(line.slice(line.indexOf(':') + 1));
+      if (node) await this._touchDevice(node);
       return;
     }
 
@@ -514,6 +518,11 @@ export class SerialService extends EventEmitter {
     }
   }
 
+  /** Marks a node as heard from just now and tells every connected dashboard. */
+  async markSeen(deviceId: string, batteryVolts?: number) {
+    await this._touchDevice(deviceId, batteryVolts);
+  }
+
   async send(packet: any) {
     if (!this.connected || !this.port?.isOpen) {
       const err: any = new Error('Serial bridge not connected');
@@ -561,11 +570,8 @@ export function startHeartbeatSweep(intervalMs: number = 5000) {
     try {
       // Keep Team A (connected host gateway) online as long as serial port is connected
       if (serialService.connected) {
-        await Device.findOneAndUpdate(
-          { deviceId: 'A', isDemo: false },
-          { $set: { status: 'online', lastSeen: new Date() } },
-          { returnDocument: 'after', upsert: true }
-        );
+        // Tells dashboards too (the old silent database write never reached the browser)
+        await serialService.markSeen('A');
       }
 
       const cutoff = new Date(Date.now() - timeout);

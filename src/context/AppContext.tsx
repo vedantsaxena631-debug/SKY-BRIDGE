@@ -327,6 +327,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
     });
 
+    // Full device state on connect, so a page opened after the boards came online is right immediately
+    socket.on('devices:snapshot', (list: any[]) => {
+      setDevices((prev) =>
+        prev.map((d) => {
+          const id = d.id === 'TEAM_A' ? 'A' : d.id === 'TEAM_B' ? 'B' : 'DRONE';
+          const row = (list || []).find((x: any) => x.deviceId === id);
+          if (row && row.status === 'online') {
+            return {
+              ...d,
+              status: 'online',
+              lastSeen: 'Just now',
+              battery: row.batteryVolts ? `${Number(row.batteryVolts).toFixed(1)}V` : d.battery,
+            };
+          }
+          return { ...d, status: 'offline' };
+        })
+      );
+    });
+
     socket.on('device:online', (dev: any) => {
       const devId: NodeId = dev.deviceId === 'A' ? 'TEAM_A' : dev.deviceId === 'B' ? 'TEAM_B' : 'DRONE_RELAY';
       setDevices((prev) =>
@@ -570,8 +589,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const backendFrom = from === 'TEAM_A' ? 'A' : from === 'TEAM_B' ? 'B' : from;
       const backendTo = to === 'TEAM_A' ? 'A' : to === 'TEAM_B' ? 'B' : to;
 
+      let savedDoc: any = null;
       try {
-        await api.post('/messages', {
+        savedDoc = await api.post('/messages', {
           from: backendFrom,
           to: backendTo,
           payload,
@@ -607,6 +627,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setNotifications((prev) => [failureNotif, ...prev]);
           throw err;
         }
+      }
+
+      if (mode === 'LIVE' && savedDoc) {
+        // Live Mode: the server's record is the truth. No simulated hops and no invented delivery;
+        // the status changes only when the hardware gateway reports it.
+        const liveMsg = mapDocToMessage(savedDoc);
+        setMessages((prev) => [liveMsg, ...prev.filter((m) => m.msgID !== liveMsg.msgID)]);
+        setAuditLogs((prev) => [
+          {
+            id: `aud_${Date.now()}`,
+            timestamp: nowStr,
+            actor: currentUser.username,
+            role: currentUser.role,
+            action: isTestPing ? 'SEND_TEST_PING' : 'SEND_MESSAGE',
+            target: `${from} -> ${to}`,
+            metadata: { msgID: liveMsg.msgID, payload, priority, isDemo: false },
+          },
+          ...prev,
+        ]);
+        return liveMsg;
       }
 
       setMessages((prev) => [newMsg, ...prev]);

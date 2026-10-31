@@ -91,7 +91,7 @@ router.post('/events', async (req: Request, res: Response) => {
           },
         },
         {
-          new: true,
+          returnDocument: 'after',
           upsert: true,
         }
       );
@@ -168,6 +168,8 @@ router.post('/events', async (req: Request, res: Response) => {
         : incoming;
 
       serialService.emit('message:received', data);
+      // A packet from this node proves it is alive
+      await serialService.markSeen(from);
 
       return res.json({
         success: true,
@@ -240,6 +242,8 @@ router.post('/events', async (req: Request, res: Response) => {
         : message;
 
       serialService.emit('message:delivered', data);
+      // An ACK proves the receiving node is alive
+      await serialService.markSeen(message.to);
 
       return res.json({
         success: true,

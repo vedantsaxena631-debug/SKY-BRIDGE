@@ -3,6 +3,18 @@ import { Router, Request, Response } from 'express';
 import { requireAuth, requireRole, scopeToSessionMode, enforceSenderIdentity } from '../middleware/auth';
 import { Message } from '../models/Message';
 import { serialService } from '../services/serialService';
+import { Device } from '../models/Device';
+
+// The Team A board is the only way a live message reaches the radio network.
+// It counts as connected when this server has its USB port, or the laptop gateway sent a heartbeat recently.
+async function gatewayIsOnline(): Promise<boolean> {
+  const timeout = Number(process.env.HEARTBEAT_TIMEOUT_MS || 20000);
+  const rows: any[] = await Device.find({ deviceId: 'A', isDemo: false });
+  const a = rows[0];
+  return Boolean(
+    a && a.status === 'online' && a.lastSeen && Date.now() - new Date(a.lastSeen).getTime() < timeout
+  );
+}
 import { generateCorrelationId, logTrace } from '../utils/trace';
 
 const router = Router();
@@ -91,30 +103,38 @@ router.post(
       `msgID=${msgID} payload=${payloadBytes}B type=${type || 'MSG'}`
     );
 
-    // Live messages send to hardware bridge if connected, otherwise queue for remote gateway
+    // Live messages go straight to the USB board when this server has it, or wait in the outbox
+    // for the laptop gateway. If neither is available, say so now instead of queueing forever.
     let status = isDemo ? 'sent_to_bridge' : 'queued';
 
-    if (!isDemo && serialService.connected) {
-      try {
-        await serialService.send({
-          from,
-          to,
-          msgID,
-          payload,
-          priority: priority || 'routine',
-          type: type || 'MSG',
+    if (!isDemo) {
+      if (serialService.connected) {
+        try {
+          await serialService.send({
+            from,
+            to,
+            msgID,
+            payload,
+            priority: priority || 'routine',
+            type: type || 'MSG',
+          });
+          status = 'sent_to_bridge';
+          logTrace(correlationId, 'serial.out', `msgID=${msgID} dispatched to serial bridge`);
+        } catch (err: any) {
+          console.warn('[messages] serial send error:', err.message);
+          return res.status(503).json({
+            error: 'Could not write to the Team A board. Message not sent.',
+            code: 'SERIAL_SEND_FAILED',
+          });
+        }
+      } else if (await gatewayIsOnline()) {
+        logTrace(correlationId, 'gateway.queue', `msgID=${msgID} bytes=${payloadBytes}`);
+      } else {
+        return res.status(503).json({
+          error: 'Team A board is offline. Message not sent. Plug in the Team A board and start the gateway.',
+          code: 'GATEWAY_OFFLINE',
         });
-        status = 'sent_to_bridge';
-        logTrace(correlationId, 'serial.out', `msgID=${msgID} dispatched to serial bridge`);
-      } catch (err: any) {
-        console.warn('[messages] serial send error:', err.message);
       }
-    } else if (!isDemo) {
-      logTrace(
-        correlationId,
-        'gateway.queue',
-        `msgID=${msgID} bytes=${payloadBytes}`
-      );
     }
 
     const dbStart = Date.now();

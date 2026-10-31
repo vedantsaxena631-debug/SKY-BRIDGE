@@ -26,6 +26,14 @@ console.log(`Cloud Server Target : ${CLOUD_API_URL}`);
 console.log(`Gateway Client ID   : ${GATEWAY_ID}`);
 console.log(`Physical LoRa Port  : ${SERIAL_PORT} @ ${BAUD_RATE} baud\n`);
 
+// "TEAM_B" -> "B", "TEAM_A" -> "A", "DRONE" -> "DRONE". Whole tokens only.
+function nodeFromName(raw: unknown): 'A' | 'B' | 'DRONE' | null {
+  const tokens = String(raw ?? '').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  if (tokens.some((t) => t === 'DRONE' || t === 'RELAY' || t === 'REPEATER')) return 'DRONE';
+  const last = tokens[tokens.length - 1];
+  return last === 'A' || last === 'B' ? last : null;
+}
+
 async function sendCloudEvent(eventData: any) {
   try {
     const res = await fetch(`${CLOUD_API_URL}/gateway/events`, {
@@ -74,11 +82,14 @@ async function startGateway() {
         if (pkt.type === 'MSG') {
           await sendCloudEvent({
             event: 'received',
-            from: pkt.from,
-            to: pkt.to,
+            from: nodeFromName(pkt.from) ?? pkt.from,
+            to: nodeFromName(pkt.to) ?? pkt.to,
             payload: pkt.payload,
             msgID: pkt.msgID,
           });
+        } else if (pkt.type === 'HEARTBEAT') {
+          const nodeId = nodeFromName(pkt.from);
+          if (nodeId) await sendCloudEvent({ event: 'heartbeat', nodeId });
         } else if (pkt.type === 'ACK') {
           await sendCloudEvent({
             event: 'delivered',
@@ -86,6 +97,13 @@ async function startGateway() {
           });
         }
       } catch {}
+      return;
+    }
+
+    // Status lines from the board: keep the named node marked online
+    if (line.startsWith('NODE:') || line.startsWith('CONNECTED PEER:')) {
+      const nodeId = nodeFromName(line.slice(line.indexOf(':') + 1));
+      if (nodeId) await sendCloudEvent({ event: 'heartbeat', nodeId });
       return;
     }
 
@@ -153,19 +171,40 @@ async function startGateway() {
     }
   });
 
-  // Heartbeat to cloud every 10s
-  setInterval(() => {
-    sendCloudEvent({ event: 'heartbeat', nodeId: 'A' });
-  }, 10000);
-  sendCloudEvent({ event: 'heartbeat', nodeId: 'A' });
+  // Team A is online only while its USB port is really open. If the cable comes out, stop and say so,
+  // so the website shows Team A offline within ~20 seconds instead of staying green.
+  port.on('close', () => {
+    console.error('[cloud-agent] USB port closed. Team A is now offline. Plug the board back in and run the gateway again.');
+    process.exit(1);
+  });
+  port.on('error', (e: Error) => {
+    console.error('[cloud-agent] USB port error:', e.message);
+  });
+
+  const beat = () => {
+    if (port.isOpen) sendCloudEvent({ event: 'heartbeat', nodeId: 'A' });
+  };
+  setInterval(beat, 10000);
+  beat();
 
   // Outbox polling loop (fetch messages submitted by web users on the deployed site)
+  let outboxWarned = false;
   setInterval(async () => {
     try {
       const res = await fetch(`${CLOUD_API_URL}/gateway/outbox?gatewayId=${encodeURIComponent(GATEWAY_ID)}`, {
         headers: { 'x-gateway-secret': GATEWAY_SECRET },
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        if (!outboxWarned) {
+          outboxWarned = true;
+          console.warn(
+            `[cloud-agent] Cannot read outbox (${res.status}).` +
+              (res.status === 401 ? ' GATEWAY_SECRET does not match the one set on the server.' : '')
+          );
+        }
+        return;
+      }
+      outboxWarned = false;
 
       const data = await res.json();
       if (!data.message) return;

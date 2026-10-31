@@ -109,8 +109,10 @@ async function startServer() {
         console.warn('[serial] connect notice:', err.message)
       );
 
-    startHeartbeatSweep();
   }
+
+  // Marks a node offline when nothing has been heard from it. Runs in local and remote gateway mode.
+  startHeartbeatSweep();
 
   // API Routes
   app.use('/api/v1/auth', authRoutes);
